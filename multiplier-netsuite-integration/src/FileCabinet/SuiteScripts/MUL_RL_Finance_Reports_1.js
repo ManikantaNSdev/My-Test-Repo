@@ -503,15 +503,6 @@ define(['N/ui/serverWidget', 'N/search', 'N/runtime', 'N/format'], function(serv
         }
 
         if(showInForeignCurrency == 'T'){
-            
-            /*searchObj.columns.push(
-                search.createColumn({
-                    name: "formulacurrency",
-                    summary: "SUM",
-                    formula: "NVL({debitfxamount},0)-NVL({creditfxamount},0)",
-                    label: "Debit(Foreign Currency)"
-                 })
-            );*/
             searchObj.columns.push(
                 search.createColumn({
                     name: "formulacurrency",
@@ -521,14 +512,6 @@ define(['N/ui/serverWidget', 'N/search', 'N/runtime', 'N/format'], function(serv
                  })
             );
         }else{
-            /*searchObj.columns.push(
-                search.createColumn({
-                    name: "formulacurrency",
-                    summary: "SUM",
-                    formula: "NVL({debitamount},0)-NVL({creditamount},0)",
-                    label: "Debit"
-                })
-            );*/
             searchObj.columns.push(
                 search.createColumn({
                     name: "formulacurrency",
