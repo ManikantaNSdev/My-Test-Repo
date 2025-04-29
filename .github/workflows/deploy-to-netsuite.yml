@@ -19,7 +19,7 @@ jobs:
           node-version: '16'
 
       - name: Install SuiteCloud CLI
-        run: npm install -g @oracle/suitecloud-cli
+        run: npm install -g @oracle/suitecloud-cli --acceptsuitecloudsdklicense
 
       - name: Authenticate using Token Auth
         run: |
