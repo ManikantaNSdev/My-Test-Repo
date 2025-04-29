@@ -1,4 +1,8 @@
 <manifest projecttype="ACCOUNTCUSTOMIZATION">
   <projectname>multiplier-netsuite-integration</projectname>
   <frameworkversion>1.0</frameworkversion>
+  <types>
+    <type>file</file>
+    <type>customscript</file>
+  </types> 
 </manifest>
