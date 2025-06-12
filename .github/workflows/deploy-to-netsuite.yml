@@ -29,7 +29,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '16'
-          cache: 'npm'  # Enable npm caching for faster installs
       
       - name: Install dependencies
         run: |
@@ -42,7 +41,10 @@ jobs:
               "dotenv": "^16.5.0"
             }
           }' > package.json
-          npm ci --no-audit --prefer-offline  # Faster and more reliable than npm install
+          # Create package-lock.json for caching to work
+          npm install --package-lock-only
+          # Install dependencies with optimized flags
+          npm ci --no-audit --prefer-offline
       
       - name: Create and run deployment script
         run: |
