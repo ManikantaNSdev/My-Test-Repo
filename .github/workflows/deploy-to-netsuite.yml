@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '**.js'  # Only trigger on JavaScript file changes
+      - '.github/workflows/deploy-to-netsuite.yml'  # Also trigger when workflow file changes
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
