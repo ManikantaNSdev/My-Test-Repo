@@ -56,8 +56,8 @@ jobs:
         env:
           NS_ACCOUNT: ${{ secrets.SANDBOX_ACCOUNT }}
           NS_CONSUMER_KEY: ${{ secrets.SANDBOX_CONSUMER_KEY }}
-          NS_CERTIFICATE_ID: ${{ secrets.SANDBOX_CERTIFICATE_ID }}
-          NS_PRIVATE_KEY: ${{ secrets.SANDBOX_PRIVATE_KEY }}
+          NS_CERTIFICATE_ID: ${{ secrets.NS_CERTIFICATE_ID }}
+          NS_PRIVATE_KEY: ${{ secrets.NS_PRIVATE_KEY }}
         run: |
           echo "Running deployment script with environment: sandbox"
           echo "Project directory structure:"
