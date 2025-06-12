@@ -656,7 +656,14 @@ jobs:
           EOF
       
       - name: Deploy to NetSuite
-        run: node multiplier_netsuite_deployment.js
+        run: |
+          # Add debugging for script record creation
+          echo "Adding debug mode for script record creation"
+          sed -i 's/console.log(`⚠️ Skipping script record creation/console.log(`DEBUG: ⚠️ Skipping script record creation/' multiplier_netsuite_deployment.js
+          sed -i 's/async function createOrUpdateScriptRecord/async function createOrUpdateScriptRecord(fileId, fileName, fileContent) {\n            console.log(`DEBUG: Attempting to create\/update script record for ${fileName}`);\n            try {/' multiplier_netsuite_deployment.js
+          
+          # Run the deployment script with verbose logging
+          node multiplier_netsuite_deployment.js
         env:
           ACCOUNT_ID: ${{ secrets.NETSUITE_ACCOUNT_ID }}
           BASE_URL: ${{ secrets.NETSUITE_BASE_URL }}
@@ -668,3 +675,4 @@ jobs:
           NETSUITE_RESTLET_FOLDER_ID: '2747420'
           JWT_PRIVATE_KEY: ${{ secrets.NETSUITE_JWT_PRIVATE_KEY }}
           JWT_KEY_ID: ${{ secrets.NETSUITE_JWT_KEY_ID }}
+          DEBUG: 'true'
