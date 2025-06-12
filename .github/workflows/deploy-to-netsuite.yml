@@ -19,6 +19,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: Netsuite Sandbox
 
     steps:
       - name: Checkout code
