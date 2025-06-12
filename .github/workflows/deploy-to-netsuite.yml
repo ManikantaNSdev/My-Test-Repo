@@ -55,6 +55,11 @@ jobs:
       - name: Make deployment script executable
         run: chmod +x ./multiplier_github_netsuite_deployment.sh
 
+      - name: List directory contents
+        run: |
+          echo "Current directory: $(pwd)"
+          ls -la
+          
       - name: Deploy to Sandbox
         if: ${{ github.event.inputs.environment == 'sandbox' || github.event.inputs.environment == null }}
         env:
@@ -63,9 +68,13 @@ jobs:
           NS_CERTIFICATE_ID: ${{ secrets.SANDBOX_CERTIFICATE_ID }}
           NS_PRIVATE_KEY: ${{ secrets.SANDBOX_PRIVATE_KEY }}
         run: |
+          echo "Running deployment script with environment: sandbox"
+          echo "Project directory structure:"
+          ls -la
           ./multiplier_github_netsuite_deployment.sh \
             --environment sandbox \
-            --mode ${{ github.event.inputs.deploy_mode || 'validate_and_deploy' }}
+            --mode ${{ github.event.inputs.deploy_mode || 'validate_and_deploy' }} \
+            --directory multiplier-netsuite-integration
 
       - name: Deploy to Production
         if: ${{ github.event.inputs.environment == 'production' }}
