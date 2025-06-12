@@ -46,6 +46,7 @@ jobs:
           /**
            * Multiplier NetSuite Deployment System
            * Syncs JavaScript files from GitHub to NetSuite while preserving folder structure
+           * Also creates script records based on script type annotations
            */
 
           require('dotenv').config();
@@ -73,6 +74,20 @@ jobs:
             'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts': 'SuiteScripts',
             'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/Restlet Scripts': 'SuiteScripts/Restlet Scripts',
             // Add more path mappings as needed
+          };
+
+          // Script type mapping
+          const SCRIPT_TYPES = {
+            'restlet': 'scriptrestlet',
+            'suitelet': 'scriptsuitelet',
+            'scheduled': 'scheduledscript',
+            'mapreduce': 'mapreducescript',
+            'userevent': 'usereventscript',
+            'client': 'clientscript',
+            'workflowaction': 'workflowactionscript',
+            'portlet': 'scriptportlet',
+            'massupdate': 'massupdatescript',
+            'bundleinstallation': 'bundleinstallationscript'
           };
 
           // Generate OAuth 1.0 signature for NetSuite Token-Based Authentication
@@ -187,6 +202,120 @@ jobs:
           </soap:Envelope>`;
           }
 
+          // Parse script file to extract script type and API version
+          function parseScriptFile(fileContent) {
+            const apiVersionMatch = fileContent.match(/@NApiVersion\s+(\d+\.\d+)/);
+            const scriptTypeMatch = fileContent.match(/@NScriptType\s+(\w+)/i);
+            
+            return {
+              apiVersion: apiVersionMatch ? apiVersionMatch[1] : null,
+              scriptType: scriptTypeMatch ? scriptTypeMatch[1].toLowerCase() : null
+            };
+          }
+
+          // Generate SOAP envelope to search for existing script record
+          function generateScriptSearchSOAP(scriptName) {
+            const timestamp = Math.floor(Date.now() / 1000);
+            const nonce = crypto.randomBytes(16).toString('hex');
+            const signature = generateOAuth1Signature(timestamp, nonce);
+
+            return `<?xml version="1.0" encoding="UTF-8"?>
+          <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" 
+                         xmlns:mes="urn:messages_2024_1.platform.webservices.netsuite.com" 
+                         xmlns:core="urn:core_2024_1.platform.webservices.netsuite.com"
+                         xmlns:plat="urn:core_2024_1.platform.webservices.netsuite.com">
+            <soap:Header>
+              <mes:tokenPassport>
+                <core:account>${process.env.ACCOUNT_ID}</core:account>
+                <core:consumerKey>${process.env.CONSUMER_KEY}</core:consumerKey>
+                <core:token>${process.env.TOKEN_ID}</core:token>
+                <core:nonce>${nonce}</core:nonce>
+                <core:timestamp>${timestamp}</core:timestamp>
+                <core:signature algorithm="HMAC-SHA256">${signature}</core:signature>
+              </mes:tokenPassport>
+            </soap:Header>
+            <soap:Body>
+              <mes:search>
+                <mes:searchRecord xsi:type="plat:ScriptSearch" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+                  <plat:basic>
+                    <plat:name operator="is">
+                      <plat:searchValue>${scriptName}</plat:searchValue>
+                    </plat:name>
+                  </plat:basic>
+                </mes:searchRecord>
+              </mes:search>
+            </soap:Body>
+          </soap:Envelope>`;
+          }
+
+          // Generate SOAP envelope to create a script record
+          function generateAddScriptSOAP(scriptName, scriptType, fileId, apiVersion) {
+            const timestamp = Math.floor(Date.now() / 1000);
+            const nonce = crypto.randomBytes(16).toString('hex');
+            const signature = generateOAuth1Signature(timestamp, nonce);
+            
+            const nsScriptType = SCRIPT_TYPES[scriptType] || scriptType;
+            
+            return `<?xml version="1.0" encoding="UTF-8"?>
+          <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" 
+                         xmlns:mes="urn:messages_2024_1.platform.webservices.netsuite.com" 
+                         xmlns:core="urn:core_2024_1.platform.webservices.netsuite.com"
+                         xmlns:plat="urn:core_2024_1.platform.webservices.netsuite.com">
+            <soap:Header>
+              <mes:tokenPassport>
+                <core:account>${process.env.ACCOUNT_ID}</core:account>
+                <core:consumerKey>${process.env.CONSUMER_KEY}</core:consumerKey>
+                <core:token>${process.env.TOKEN_ID}</core:token>
+                <core:nonce>${nonce}</core:nonce>
+                <core:timestamp>${timestamp}</core:timestamp>
+                <core:signature algorithm="HMAC-SHA256">${signature}</core:signature>
+              </mes:tokenPassport>
+            </soap:Header>
+            <soap:Body>
+              <mes:add>
+                <mes:record xsi:type="plat:Script" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+                  <plat:name>${scriptName}</plat:name>
+                  <plat:scriptType>${nsScriptType}</plat:scriptType>
+                  <plat:scriptFile internalId="${fileId}"/>
+                  <plat:apiVersion>${apiVersion}</plat:apiVersion>
+                </mes:record>
+              </mes:add>
+            </soap:Body>
+          </soap:Envelope>`;
+          }
+
+          // Generate SOAP envelope to update a script record
+          function generateUpdateScriptSOAP(scriptId, scriptName, fileId, apiVersion) {
+            const timestamp = Math.floor(Date.now() / 1000);
+            const nonce = crypto.randomBytes(16).toString('hex');
+            const signature = generateOAuth1Signature(timestamp, nonce);
+            
+            return `<?xml version="1.0" encoding="UTF-8"?>
+          <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" 
+                         xmlns:mes="urn:messages_2024_1.platform.webservices.netsuite.com" 
+                         xmlns:core="urn:core_2024_1.platform.webservices.netsuite.com"
+                         xmlns:plat="urn:core_2024_1.platform.webservices.netsuite.com">
+            <soap:Header>
+              <mes:tokenPassport>
+                <core:account>${process.env.ACCOUNT_ID}</core:account>
+                <core:consumerKey>${process.env.CONSUMER_KEY}</core:consumerKey>
+                <core:token>${process.env.TOKEN_ID}</core:token>
+                <core:nonce>${nonce}</core:nonce>
+                <core:timestamp>${timestamp}</core:timestamp>
+                <core:signature algorithm="HMAC-SHA256">${signature}</core:signature>
+              </mes:tokenPassport>
+            </soap:Header>
+            <soap:Body>
+              <mes:update>
+                <mes:record xsi:type="plat:Script" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" internalId="${scriptId}">
+                  <plat:scriptFile internalId="${fileId}"/>
+                  <plat:apiVersion>${apiVersion}</plat:apiVersion>
+                </mes:record>
+              </mes:update>
+            </soap:Body>
+          </soap:Envelope>`;
+          }
+
           // Find all JavaScript files recursively in a directory
           function findJavaScriptFiles(directory, fileList = [], relativePath = '') {
             if (!fs.existsSync(directory)) {
@@ -235,6 +364,99 @@ jobs:
             }
           }
 
+          // Search for existing script record in NetSuite
+          async function findExistingScript(scriptName) {
+            const searchSOAP = generateScriptSearchSOAP(scriptName);
+
+            try {
+              const response = await axios.post(SOAP_URL, searchSOAP, {
+                headers: {
+                  'Content-Type': 'text/xml; charset=utf-8',
+                  'SOAPAction': 'search'
+                }
+              });
+
+              const scriptIdMatch = response.data.match(/internalId="(\d+)"/);
+              return scriptIdMatch ? scriptIdMatch[1] : null;
+            } catch (err) {
+              console.error('Error searching for script record:', err.message);
+              return null;
+            }
+          }
+
+          // Create or update script record
+          async function createOrUpdateScriptRecord(fileId, fileName, fileContent) {
+            try {
+              // Parse script file to get script type and API version
+              const { apiVersion, scriptType } = parseScriptFile(fileContent);
+              
+              if (!apiVersion || !scriptType) {
+                console.log(`⚠️ Skipping script record creation for ${fileName}: Missing @NApiVersion or @NScriptType`);
+                return {
+                  success: false,
+                  error: 'Missing script annotations',
+                  fileName: fileName
+                };
+              }
+              
+              // Generate script name from file name (remove extension)
+              const scriptName = path.basename(fileName, '.js');
+              
+              // Check if script record already exists
+              const existingScriptId = await findExistingScript(scriptName);
+              
+              let response;
+              let operation;
+              
+              if (existingScriptId) {
+                // Update existing script record
+                const updateSOAP = generateUpdateScriptSOAP(existingScriptId, scriptName, fileId, apiVersion);
+                response = await axios.post(SOAP_URL, updateSOAP, {
+                  headers: {
+                    'Content-Type': 'text/xml; charset=utf-8',
+                    'SOAPAction': 'update'
+                  }
+                });
+                operation = 'Updated';
+              } else {
+                // Create new script record
+                const addSOAP = generateAddScriptSOAP(scriptName, scriptType, fileId, apiVersion);
+                response = await axios.post(SOAP_URL, addSOAP, {
+                  headers: {
+                    'Content-Type': 'text/xml; charset=utf-8',
+                    'SOAPAction': 'add'
+                  }
+                });
+                operation = 'Created';
+              }
+              
+              // Parse response for script ID
+              const scriptIdMatch = response.data.match(/internalId="(\d+)"/);
+              if (!scriptIdMatch) {
+                return {
+                  success: false,
+                  error: 'Could not parse script ID from response',
+                  fileName: fileName
+                };
+              }
+              
+              return {
+                success: true,
+                scriptId: scriptIdMatch[1],
+                scriptName: scriptName,
+                scriptType: scriptType,
+                operation: operation,
+                fileName: fileName
+              };
+            } catch (err) {
+              return {
+                success: false,
+                error: err.response?.data || err.message,
+                fileName: fileName
+              };
+            }
+          }
+
           // Upload single file with smart update/create logic
           async function uploadSingleFile(fileInfo, folderId) {
             const { fullPath, fileName } = fileInfo;
@@ -276,13 +498,26 @@ jobs:
               }
 
               if (fileIdMatch) {
-                return {
+                const fileId = fileIdMatch[1];
+                const result = {
                   success: true,
-                  fileId: fileIdMatch[1],
+                  fileId: fileId,
                   fileName: fileName,
                   operation: operation,
                   filePath: fullPath
                 };
+                
+                // Check if this is a script file with annotations and create/update script record
+                if (fileName.endsWith('.js')) {
+                  const scriptResult = await createOrUpdateScriptRecord(fileId, fileName, fileContent);
+                  if (scriptResult.success) {
+                    result.scriptId = scriptResult.scriptId;
+                    result.scriptOperation = scriptResult.operation;
+                    result.scriptType = scriptResult.scriptType;
+                  }
+                }
+                
+                return result;
               }
               
               return { 
@@ -379,7 +614,11 @@ jobs:
                 results.push(result);
 
                 if (result.success) {
-                  console.log(`✅ ${result.operation}: ${result.fileName} (ID: ${result.fileId})`);
+                  let message = `✅ ${result.operation}: ${result.fileName} (ID: ${result.fileId})`;
+                  if (result.scriptId) {
+                    message += ` → ${result.scriptOperation} script record (ID: ${result.scriptId}, Type: ${result.scriptType})`;
+                  }
+                  console.log(message);
                   successCount++;
                 } else {
                   console.log(`❌ Failed: ${result.fileName} - ${result.error}`);
