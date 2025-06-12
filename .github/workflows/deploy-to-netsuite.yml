@@ -1,89 +1,35 @@
-name: NetSuite Deployment
+name: Deploy to NetSuite with JWT
 
 on:
   push:
-    branches:
-      - main
-  workflow_dispatch:
-    inputs:
-      deploy_mode:
-        description: 'Deployment mode'
-        required: true
-        default: 'validate_and_deploy'
-        type: choice
-        options:
-          - validate_only
-          - deploy_only
-          - validate_and_deploy
+    branches: [main]
+    paths:
+      - '**.js'  # Only trigger on JavaScript file changes
+  workflow_dispatch:  # Allow manual triggering
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: Netsuite Sandbox
-
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-
+        uses: actions/checkout@v4
+      
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '16'
-
-      - name: Install global dependencies
-        run: |
-          npm install -g @oracle/suitecloud-cli --acceptsuitecloudsdklicense
-          npm install -g typescript
-
-      - name: Install project dependencies
-        run: |
-          if [ -f "package.json" ]; then
-            npm ci
-          else
-            echo "No package.json found, skipping npm ci"
-          fi
-
-      - name: Make deployment script executable
-        run: chmod +x ./multiplier_github_netsuite_deployment.sh
-
-      - name: List directory contents
-        run: |
-          echo "Current directory: $(pwd)"
-          ls -la
-          
-      - name: Create project directory if it doesn't exist
-        run: |
-          if [ ! -d "multiplier-netsuite-integration" ]; then
-            echo "Creating multiplier-netsuite-integration directory"
-            mkdir -p multiplier-netsuite-integration
-            cp -r multiplier-netsuite-integration/* multiplier-netsuite-integration/ || true
-          fi
-          
-      - name: Deploy to Sandbox
+      
+      - name: Install dependencies
+        run: npm install
+      
+      - name: Deploy to NetSuite
+        run: node multiplier_netsuite_deployment.js
         env:
-          NS_ACCOUNT: ${{ secrets.SANDBOX_ACCOUNT }}
-          NS_CONSUMER_KEY: ${{ secrets.SANDBOX_CONSUMER_KEY }}
-          NS_CERTIFICATE_ID: ${{ secrets.NS_CERTIFICATE_ID }}
-          NS_PRIVATE_KEY: ${{ secrets.NS_PRIVATE_KEY }}
-        run: |
-          echo "Running deployment script with environment: sandbox"
-          echo "Project directory structure:"
-          ls -la
-          
-          # Run with bash -x to see all commands being executed
-          bash -x ./multiplier_github_netsuite_deployment.sh \
-            --environment sandbox \
-            --mode ${{ github.event.inputs.deploy_mode || 'validate_and_deploy' }} \
-            --directory multiplier-netsuite-integration
-
-      - name: Notify deployment status
-        if: always()
-        uses: rtCamp/action-slack-notify@v2
-        env:
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-          SLACK_CHANNEL: netsuite-deployments
-          SLACK_COLOR: ${{ job.status }}
-          SLACK_TITLE: NetSuite Deployment Status
-          SLACK_MESSAGE: "Deployment to sandbox ${{ job.status }}"
+          ACCOUNT_ID: ${{ secrets.NETSUITE_ACCOUNT_ID }}
+          BASE_URL: ${{ secrets.NETSUITE_BASE_URL }}
+          CONSUMER_KEY: ${{ secrets.NETSUITE_CONSUMER_KEY }}
+          CONSUMER_SECRET: ${{ secrets.NETSUITE_CONSUMER_SECRET }}
+          TOKEN_ID: ${{ secrets.NETSUITE_TOKEN_ID }}
+          TOKEN_SECRET: ${{ secrets.NETSUITE_TOKEN_SECRET }}
+          JWT_PRIVATE_KEY: ${{ secrets.NETSUITE_JWT_PRIVATE_KEY }}
+          JWT_KEY_ID: ${{ secrets.NETSUITE_JWT_KEY_ID }}
