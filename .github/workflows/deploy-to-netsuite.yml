@@ -53,6 +53,14 @@ jobs:
           echo "Current directory: $(pwd)"
           ls -la
           
+      - name: Create project directory if it doesn't exist
+        run: |
+          if [ ! -d "multiplier-netsuite-integration" ]; then
+            echo "Creating multiplier-netsuite-integration directory"
+            mkdir -p multiplier-netsuite-integration
+            cp -r multiplier-netsuite-integration/* multiplier-netsuite-integration/ || true
+          fi
+          
       - name: Deploy to Sandbox
         env:
           NS_ACCOUNT: ${{ secrets.SANDBOX_ACCOUNT }}
@@ -63,7 +71,9 @@ jobs:
           echo "Running deployment script with environment: sandbox"
           echo "Project directory structure:"
           ls -la
-          ./multiplier_github_netsuite_deployment.sh \
+          
+          # Run with bash -x to see all commands being executed
+          bash -x ./multiplier_github_netsuite_deployment.sh \
             --environment sandbox \
             --mode ${{ github.event.inputs.deploy_mode || 'validate_and_deploy' }} \
             --directory multiplier-netsuite-integration
