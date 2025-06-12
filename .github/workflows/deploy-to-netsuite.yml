@@ -39,290 +39,286 @@ jobs:
       - name: Install dependencies
         run: npm install
       
-      - name: Check for deployment script
+      - name: Create deployment script
         run: |
-          if [ ! -f multiplier_netsuite_deployment.js ]; then
-            echo "Deployment script not found in repository. Creating it..."
-            # Copy the script from your local repository to GitHub Actions
-            cat > multiplier_netsuite_deployment.js << 'EOL'
-/**
- * Multiplier NetSuite Deployment System
- */
+          cat > multiplier_netsuite_deployment.js << 'EOF'
+          /**
+           * Multiplier NetSuite Deployment System
+           */
 
-require('dotenv').config();
-const fs = require('fs');
-const axios = require('axios');
-const path = require('path');
-const crypto = require('crypto');
+          require('dotenv').config();
+          const fs = require('fs');
+          const axios = require('axios');
+          const path = require('path');
+          const crypto = require('crypto');
 
-// NetSuite API Configuration
-const BASE_URL = process.env.BASE_URL;
-const SOAP_URL = `${BASE_URL}/services/NetSuitePort_2024_1`;
+          // NetSuite API Configuration
+          const BASE_URL = process.env.BASE_URL;
+          const SOAP_URL = `${BASE_URL}/services/NetSuitePort_2024_1`;
 
-// Deployment Configuration
-const SOURCE_DIRECTORY = './';  // Current directory in GitHub Actions
-const TARGET_FOLDER_ID = 2746719; // NetSuite Suite Scripts folder ID
+          // Deployment Configuration
+          const SOURCE_DIRECTORY = './';  // Current directory in GitHub Actions
+          const TARGET_FOLDER_ID = 2746719; // NetSuite Suite Scripts folder ID
 
-// Generate OAuth 1.0 signature for NetSuite Token-Based Authentication
-function generateOAuth1Signature(timestamp, nonce) {
-  const baseString = `${process.env.ACCOUNT_ID}&${process.env.CONSUMER_KEY}&${process.env.TOKEN_ID}&${nonce}&${timestamp}`;
-  const signingKey = `${process.env.CONSUMER_SECRET}&${process.env.TOKEN_SECRET}`;
-  return crypto.createHmac('sha256', signingKey).update(baseString).digest('base64');
-}
+          // Generate OAuth 1.0 signature for NetSuite Token-Based Authentication
+          function generateOAuth1Signature(timestamp, nonce) {
+            const baseString = `${process.env.ACCOUNT_ID}&${process.env.CONSUMER_KEY}&${process.env.TOKEN_ID}&${nonce}&${timestamp}`;
+            const signingKey = `${process.env.CONSUMER_SECRET}&${process.env.TOKEN_SECRET}`;
+            return crypto.createHmac('sha256', signingKey).update(baseString).digest('base64');
+          }
 
-// Generate SOAP envelope to search for existing files
-function generateSearchSOAP(fileName, folderId) {
-  const timestamp = Math.floor(Date.now() / 1000);
-  const nonce = crypto.randomBytes(16).toString('hex');
-  const signature = generateOAuth1Signature(timestamp, nonce);
+          // Generate SOAP envelope to search for existing files
+          function generateSearchSOAP(fileName, folderId) {
+            const timestamp = Math.floor(Date.now() / 1000);
+            const nonce = crypto.randomBytes(16).toString('hex');
+            const signature = generateOAuth1Signature(timestamp, nonce);
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" 
-               xmlns:mes="urn:messages_2024_1.platform.webservices.netsuite.com" 
-               xmlns:core="urn:core_2024_1.platform.webservices.netsuite.com"
-               xmlns:fil="urn:filecabinet_2024_1.documents.webservices.netsuite.com">
-  <soap:Header>
-    <mes:tokenPassport>
-      <core:account>${process.env.ACCOUNT_ID}</core:account>
-      <core:consumerKey>${process.env.CONSUMER_KEY}</core:consumerKey>
-      <core:token>${process.env.TOKEN_ID}</core:token>
-      <core:nonce>${nonce}</core:nonce>
-      <core:timestamp>${timestamp}</core:timestamp>
-      <core:signature algorithm="HMAC-SHA256">${signature}</core:signature>
-    </mes:tokenPassport>
-  </soap:Header>
-  <soap:Body>
-    <mes:search>
-      <mes:searchRecord xsi:type="fil:FileSearch" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-        <fil:basic>
-          <core:name operator="is">
-            <core:searchValue>${fileName}</core:searchValue>
-          </core:name>
-          <core:folder operator="anyOf">
-            <core:searchValue internalId="${folderId}"/>
-          </core:folder>
-        </fil:basic>
-      </mes:searchRecord>
-    </mes:search>
-  </soap:Body>
-</soap:Envelope>`;
-}
+            return `<?xml version="1.0" encoding="UTF-8"?>
+          <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" 
+                         xmlns:mes="urn:messages_2024_1.platform.webservices.netsuite.com" 
+                         xmlns:core="urn:core_2024_1.platform.webservices.netsuite.com"
+                         xmlns:fil="urn:filecabinet_2024_1.documents.webservices.netsuite.com">
+            <soap:Header>
+              <mes:tokenPassport>
+                <core:account>${process.env.ACCOUNT_ID}</core:account>
+                <core:consumerKey>${process.env.CONSUMER_KEY}</core:consumerKey>
+                <core:token>${process.env.TOKEN_ID}</core:token>
+                <core:nonce>${nonce}</core:nonce>
+                <core:timestamp>${timestamp}</core:timestamp>
+                <core:signature algorithm="HMAC-SHA256">${signature}</core:signature>
+              </mes:tokenPassport>
+            </soap:Header>
+            <soap:Body>
+              <mes:search>
+                <mes:searchRecord xsi:type="fil:FileSearch" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+                  <fil:basic>
+                    <core:name operator="is">
+                      <core:searchValue>${fileName}</core:searchValue>
+                    </core:name>
+                    <core:folder operator="anyOf">
+                      <core:searchValue internalId="${folderId}"/>
+                    </core:folder>
+                  </fil:basic>
+                </mes:searchRecord>
+              </mes:search>
+            </soap:Body>
+          </soap:Envelope>`;
+          }
 
-// Generate SOAP envelope for file upload (add)
-function generateAddSOAP(fileName, base64Content, folderId) {
-  const timestamp = Math.floor(Date.now() / 1000);
-  const nonce = crypto.randomBytes(16).toString('hex');
-  const signature = generateOAuth1Signature(timestamp, nonce);
+          // Generate SOAP envelope for file upload (add)
+          function generateAddSOAP(fileName, base64Content, folderId) {
+            const timestamp = Math.floor(Date.now() / 1000);
+            const nonce = crypto.randomBytes(16).toString('hex');
+            const signature = generateOAuth1Signature(timestamp, nonce);
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" 
-               xmlns:mes="urn:messages_2024_1.platform.webservices.netsuite.com" 
-               xmlns:core="urn:core_2024_1.platform.webservices.netsuite.com"
-               xmlns:fil="urn:filecabinet_2024_1.documents.webservices.netsuite.com">
-  <soap:Header>
-    <mes:tokenPassport>
-      <core:account>${process.env.ACCOUNT_ID}</core:account>
-      <core:consumerKey>${process.env.CONSUMER_KEY}</core:consumerKey>
-      <core:token>${process.env.TOKEN_ID}</core:token>
-      <core:nonce>${nonce}</core:nonce>
-      <core:timestamp>${timestamp}</core:timestamp>
-      <core:signature algorithm="HMAC-SHA256">${signature}</core:signature>
-    </mes:tokenPassport>
-  </soap:Header>
-  <soap:Body>
-    <mes:add>
-      <mes:record xsi:type="fil:File" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-        <fil:name>${fileName}</fil:name>
-        <fil:content>${base64Content}</fil:content>
-        <fil:fileType>_JAVASCRIPT</fil:fileType>
-        <fil:folder internalId="${folderId}"/>
-      </mes:record>
-    </mes:add>
-  </soap:Body>
-</soap:Envelope>`;
-}
+            return `<?xml version="1.0" encoding="UTF-8"?>
+          <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" 
+                         xmlns:mes="urn:messages_2024_1.platform.webservices.netsuite.com" 
+                         xmlns:core="urn:core_2024_1.platform.webservices.netsuite.com"
+                         xmlns:fil="urn:filecabinet_2024_1.documents.webservices.netsuite.com">
+            <soap:Header>
+              <mes:tokenPassport>
+                <core:account>${process.env.ACCOUNT_ID}</core:account>
+                <core:consumerKey>${process.env.CONSUMER_KEY}</core:consumerKey>
+                <core:token>${process.env.TOKEN_ID}</core:token>
+                <core:nonce>${nonce}</core:nonce>
+                <core:timestamp>${timestamp}</core:timestamp>
+                <core:signature algorithm="HMAC-SHA256">${signature}</core:signature>
+              </mes:tokenPassport>
+            </soap:Header>
+            <soap:Body>
+              <mes:add>
+                <mes:record xsi:type="fil:File" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+                  <fil:name>${fileName}</fil:name>
+                  <fil:content>${base64Content}</fil:content>
+                  <fil:fileType>_JAVASCRIPT</fil:fileType>
+                  <fil:folder internalId="${folderId}"/>
+                </mes:record>
+              </mes:add>
+            </soap:Body>
+          </soap:Envelope>`;
+          }
 
-// Generate SOAP envelope for file update
-function generateUpdateSOAP(fileId, fileName, base64Content) {
-  const timestamp = Math.floor(Date.now() / 1000);
-  const nonce = crypto.randomBytes(16).toString('hex');
-  const signature = generateOAuth1Signature(timestamp, nonce);
+          // Generate SOAP envelope for file update
+          function generateUpdateSOAP(fileId, fileName, base64Content) {
+            const timestamp = Math.floor(Date.now() / 1000);
+            const nonce = crypto.randomBytes(16).toString('hex');
+            const signature = generateOAuth1Signature(timestamp, nonce);
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" 
-               xmlns:mes="urn:messages_2024_1.platform.webservices.netsuite.com" 
-               xmlns:core="urn:core_2024_1.platform.webservices.netsuite.com"
-               xmlns:fil="urn:filecabinet_2024_1.documents.webservices.netsuite.com">
-  <soap:Header>
-    <mes:tokenPassport>
-      <core:account>${process.env.ACCOUNT_ID}</core:account>
-      <core:consumerKey>${process.env.CONSUMER_KEY}</core:consumerKey>
-      <core:token>${process.env.TOKEN_ID}</core:token>
-      <core:nonce>${nonce}</core:nonce>
-      <core:timestamp>${timestamp}</core:timestamp>
-      <core:signature algorithm="HMAC-SHA256">${signature}</core:signature>
-    </mes:tokenPassport>
-  </soap:Header>
-  <soap:Body>
-    <mes:update>
-      <mes:record xsi:type="fil:File" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" internalId="${fileId}">
-        <fil:name>${fileName}</fil:name>
-        <fil:content>${base64Content}</fil:content>
-        <fil:fileType>_JAVASCRIPT</fil:fileType>
-      </mes:record>
-    </mes:update>
-  </soap:Body>
-</soap:Envelope>`;
-}
+            return `<?xml version="1.0" encoding="UTF-8"?>
+          <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" 
+                         xmlns:mes="urn:messages_2024_1.platform.webservices.netsuite.com" 
+                         xmlns:core="urn:core_2024_1.platform.webservices.netsuite.com"
+                         xmlns:fil="urn:filecabinet_2024_1.documents.webservices.netsuite.com">
+            <soap:Header>
+              <mes:tokenPassport>
+                <core:account>${process.env.ACCOUNT_ID}</core:account>
+                <core:consumerKey>${process.env.CONSUMER_KEY}</core:consumerKey>
+                <core:token>${process.env.TOKEN_ID}</core:token>
+                <core:nonce>${nonce}</core:nonce>
+                <core:timestamp>${timestamp}</core:timestamp>
+                <core:signature algorithm="HMAC-SHA256">${signature}</core:signature>
+              </mes:tokenPassport>
+            </soap:Header>
+            <soap:Body>
+              <mes:update>
+                <mes:record xsi:type="fil:File" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" internalId="${fileId}">
+                  <fil:name>${fileName}</fil:name>
+                  <fil:content>${base64Content}</fil:content>
+                  <fil:fileType>_JAVASCRIPT</fil:fileType>
+                </mes:record>
+              </mes:update>
+            </soap:Body>
+          </soap:Envelope>`;
+          }
 
-// Get all JavaScript files from specified directory
-function getJavaScriptFiles(directory) {
-  try {
-    const files = fs.readdirSync(directory);
-    return files.filter(file => file.endsWith('.js') && file !== 'multiplier_netsuite_deployment.js');
-  } catch (err) {
-    console.error('Error reading directory:', err);
-    return [];
-  }
-}
+          // Get all JavaScript files from specified directory
+          function getJavaScriptFiles(directory) {
+            try {
+              const files = fs.readdirSync(directory);
+              return files.filter(file => file.endsWith('.js') && file !== 'multiplier_netsuite_deployment.js');
+            } catch (err) {
+              console.error('Error reading directory:', err);
+              return [];
+            }
+          }
 
-// Search for existing file in NetSuite File Cabinet
-async function findExistingFile(fileName, folderId) {
-  const searchSOAP = generateSearchSOAP(fileName, folderId);
+          // Search for existing file in NetSuite File Cabinet
+          async function findExistingFile(fileName, folderId) {
+            const searchSOAP = generateSearchSOAP(fileName, folderId);
 
-  try {
-    const response = await axios.post(SOAP_URL, searchSOAP, {
-      headers: {
-        'Content-Type': 'text/xml; charset=utf-8',
-        'SOAPAction': 'search'
-      }
-    });
+            try {
+              const response = await axios.post(SOAP_URL, searchSOAP, {
+                headers: {
+                  'Content-Type': 'text/xml; charset=utf-8',
+                  'SOAPAction': 'search'
+                }
+              });
 
-    const fileIdMatch = response.data.match(/internalId="(\d+)"/);
-    return fileIdMatch ? fileIdMatch[1] : null;
-  } catch (err) {
-    console.error('Error searching for file:', err.message);
-    return null;
-  }
-}
+              const fileIdMatch = response.data.match(/internalId="(\d+)"/);
+              return fileIdMatch ? fileIdMatch[1] : null;
+            } catch (err) {
+              console.error('Error searching for file:', err.message);
+              return null;
+            }
+          }
 
-// Upload single file with smart update/create logic
-async function uploadSingleFile(filePath, folderId) {
-  const fileName = path.basename(filePath);
-  
-  try {
-    const fileContent = fs.readFileSync(filePath, 'utf8');
-    const base64Content = Buffer.from(fileContent).toString('base64');
+          // Upload single file with smart update/create logic
+          async function uploadSingleFile(filePath, folderId) {
+            const fileName = path.basename(filePath);
+            
+            try {
+              const fileContent = fs.readFileSync(filePath, 'utf8');
+              const base64Content = Buffer.from(fileContent).toString('base64');
 
-    // Check if file already exists
-    const existingFileId = await findExistingFile(fileName, folderId);
-    
-    let soapEnvelope;
-    let action;
-    let operation;
+              // Check if file already exists
+              const existingFileId = await findExistingFile(fileName, folderId);
+              
+              let soapEnvelope;
+              let action;
+              let operation;
 
-    if (existingFileId) {
-      // Update existing file
-      soapEnvelope = generateUpdateSOAP(existingFileId, fileName, base64Content);
-      action = 'update';
-      operation = 'Updated';
-    } else {
-      // Create new file
-      soapEnvelope = generateAddSOAP(fileName, base64Content, folderId);
-      action = 'add';
-      operation = 'Created';
-    }
+              if (existingFileId) {
+                // Update existing file
+                soapEnvelope = generateUpdateSOAP(existingFileId, fileName, base64Content);
+                action = 'update';
+                operation = 'Updated';
+              } else {
+                // Create new file
+                soapEnvelope = generateAddSOAP(fileName, base64Content, folderId);
+                action = 'add';
+                operation = 'Created';
+              }
 
-    const response = await axios.post(SOAP_URL, soapEnvelope, {
-      headers: {
-        'Content-Type': 'text/xml; charset=utf-8',
-        'SOAPAction': action
-      }
-    });
+              const response = await axios.post(SOAP_URL, soapEnvelope, {
+                headers: {
+                  'Content-Type': 'text/xml; charset=utf-8',
+                  'SOAPAction': action
+                }
+              });
 
-    // Parse response for file ID
-    let fileIdMatch = response.data.match(/internalId="(\d+)"/);
-    if (!fileIdMatch) {
-      fileIdMatch = response.data.match(/<platformCore:internalId>(\d+)<\/platformCore:internalId>/);
-    }
+              // Parse response for file ID
+              let fileIdMatch = response.data.match(/internalId="(\d+)"/);
+              if (!fileIdMatch) {
+                fileIdMatch = response.data.match(/<platformCore:internalId>(\d+)<\/platformCore:internalId>/);
+              }
 
-    if (fileIdMatch) {
-      return {
-        success: true,
-        fileId: fileIdMatch[1],
-        fileName: fileName,
-        operation: operation,
-        filePath: filePath
-      };
-    }
-    
-    return { 
-      success: false, 
-      error: 'Could not parse file ID from response',
-      fileName: fileName,
-      filePath: filePath
-    };
-  } catch (err) {
-    return { 
-      success: false, 
-      error: err.response?.data || err.message,
-      fileName: fileName,
-      filePath: filePath
-    };
-  }
-}
+              if (fileIdMatch) {
+                return {
+                  success: true,
+                  fileId: fileIdMatch[1],
+                  fileName: fileName,
+                  operation: operation,
+                  filePath: filePath
+                };
+              }
+              
+              return { 
+                success: false, 
+                error: 'Could not parse file ID from response',
+                fileName: fileName,
+                filePath: filePath
+              };
+            } catch (err) {
+              return { 
+                success: false, 
+                error: err.response?.data || err.message,
+                fileName: fileName,
+                filePath: filePath
+              };
+            }
+          }
 
-// Upload all JavaScript files from directory to NetSuite
-async function uploadAllFiles(sourceDirectory = SOURCE_DIRECTORY, targetFolderId = TARGET_FOLDER_ID) {
-  const jsFiles = getJavaScriptFiles(sourceDirectory);
+          // Upload all JavaScript files from directory to NetSuite
+          async function uploadAllFiles(sourceDirectory = SOURCE_DIRECTORY, targetFolderId = TARGET_FOLDER_ID) {
+            const jsFiles = getJavaScriptFiles(sourceDirectory);
 
-  if (jsFiles.length === 0) {
-    console.log('No JavaScript files found in directory');
-    return [];
-  }
+            if (jsFiles.length === 0) {
+              console.log('No JavaScript files found in directory');
+              return [];
+            }
 
-  console.log(`Uploading ${jsFiles.length} files to NetSuite folder ${targetFolderId}`);
+            console.log(`Uploading ${jsFiles.length} files to NetSuite folder ${targetFolderId}`);
 
-  const results = [];
-  let successCount = 0;
-  let failureCount = 0;
+            const results = [];
+            let successCount = 0;
+            let failureCount = 0;
 
-  for (const fileName of jsFiles) {
-    const filePath = path.join(sourceDirectory, fileName);
+            for (const fileName of jsFiles) {
+              const filePath = path.join(sourceDirectory, fileName);
 
-    const result = await uploadSingleFile(filePath, targetFolderId);
-    results.push(result);
+              const result = await uploadSingleFile(filePath, targetFolderId);
+              results.push(result);
 
-    if (result.success) {
-      console.log(`✅ ${result.operation}: ${result.fileName} (ID: ${result.fileId})`);
-      successCount++;
-    } else {
-      console.log(`❌ Failed: ${result.fileName} - ${result.error}`);
-      failureCount++;
-    }
+              if (result.success) {
+                console.log(`✅ ${result.operation}: ${result.fileName} (ID: ${result.fileId})`);
+                successCount++;
+              } else {
+                console.log(`❌ Failed: ${result.fileName} - ${result.error}`);
+                failureCount++;
+              }
 
-    // Rate limiting to avoid overwhelming NetSuite API
-    await new Promise(resolve => setTimeout(resolve, 1000));
-  }
+              // Rate limiting to avoid overwhelming NetSuite API
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
 
-  console.log(`\nCompleted: ${successCount} successful, ${failureCount} failed`);
-  return results;
-}
+            console.log(`\nCompleted: ${successCount} successful, ${failureCount} failed`);
+            return results;
+          }
 
-// Main function
-async function main() {
-  try {
-    await uploadAllFiles();
-  } catch (error) {
-    console.error('Deployment failed:', error);
-    process.exit(1);
-  }
-}
+          // Main function
+          async function main() {
+            try {
+              await uploadAllFiles();
+            } catch (error) {
+              console.error('Deployment failed:', error);
+              process.exit(1);
+            }
+          }
 
-// Run the main function
-main();
-EOL
-          fi
+          // Run the main function
+          main();
+          EOF
       
       - name: Deploy to NetSuite
         run: node multiplier_netsuite_deployment.js
