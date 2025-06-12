@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'SuiteScripts/**.js'  # Trigger on any JavaScript file changes in SuiteScripts folder or subfolders
+      - 'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/**.js'  # Trigger on any JavaScript file changes in SuiteScripts folder or subfolders
       - '.github/workflows/deploy-to-netsuite.yml'  # Also trigger when workflow file changes
   workflow_dispatch:  # Allow manual triggering
 
@@ -59,16 +59,20 @@ jobs:
           const SOAP_URL = `${BASE_URL}/services/NetSuitePort_2024_1`;
 
           // Deployment Configuration
-          const SOURCE_ROOT = './SuiteScripts';  // GitHub repo root folder for SuiteScripts
+          const SOURCE_ROOT = './multiplier-netsuite-integration/src/FileCabinet/SuiteScripts';  // GitHub repo root folder for SuiteScripts
           
           // NetSuite folder IDs - can be configured via environment variables
           const FOLDER_IDS = {
             'SuiteScripts': process.env.NETSUITE_SUITESCRIPTS_FOLDER_ID || '2746719',
-            'SuiteScripts/Restlet Scripts': process.env.NETSUITE_RESTLET_FOLDER_ID || '2746719',
-            'SuiteScripts/Scheduled Scripts': process.env.NETSUITE_SCHEDULED_FOLDER_ID || '2746719',
-            'SuiteScripts/MapReduce Scripts': process.env.NETSUITE_MAPREDUCE_FOLDER_ID || '2746719',
-            'SuiteScripts/Suitelet Scripts': process.env.NETSUITE_SUITELET_FOLDER_ID || '2746719',
+            'SuiteScripts/Restlet Scripts': process.env.NETSUITE_RESTLET_FOLDER_ID || '2747420',
             // Add more folder mappings as needed
+          };
+
+          // NetSuite folder paths mapping (GitHub path to NetSuite path)
+          const FOLDER_PATH_MAPPING = {
+            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts': 'SuiteScripts',
+            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/Restlet Scripts': 'SuiteScripts/Restlet Scripts',
+            // Add more path mappings as needed
           };
 
           // Generate OAuth 1.0 signature for NetSuite Token-Based Authentication
@@ -297,15 +301,35 @@ jobs:
             }
           }
 
-          // Get folder ID for a specific path, creating a default mapping if not found
-          function getFolderIdForPath(folderPath) {
+          // Map GitHub folder path to NetSuite folder path
+          function mapToNetSuiteFolderPath(githubFolderPath) {
+            // Check if we have a direct mapping
+            if (FOLDER_PATH_MAPPING[githubFolderPath]) {
+              return FOLDER_PATH_MAPPING[githubFolderPath];
+            }
+            
+            // If no direct mapping, try to construct one
+            const parts = githubFolderPath.split('/');
+            const suiteScriptsIndex = parts.indexOf('SuiteScripts');
+            
+            if (suiteScriptsIndex !== -1) {
+              return 'SuiteScripts/' + parts.slice(suiteScriptsIndex + 1).join('/');
+            }
+            
+            // Default to SuiteScripts root
+            console.warn(`No folder mapping found for ${githubFolderPath}, using SuiteScripts root`);
+            return 'SuiteScripts';
+          }
+
+          // Get folder ID for a specific path
+          function getFolderIdForPath(netSuiteFolderPath) {
             // If we have a direct mapping, use it
-            if (FOLDER_IDS[folderPath]) {
-              return FOLDER_IDS[folderPath];
+            if (FOLDER_IDS[netSuiteFolderPath]) {
+              return FOLDER_IDS[netSuiteFolderPath];
             }
             
             // If no direct mapping, use the SuiteScripts root folder ID
-            console.warn(`No folder ID mapping found for ${folderPath}, using SuiteScripts root folder`);
+            console.warn(`No folder ID mapping found for ${netSuiteFolderPath}, using SuiteScripts root folder`);
             return FOLDER_IDS['SuiteScripts'];
           }
 
@@ -334,19 +358,21 @@ jobs:
             // Group files by their folder path for better organization
             const filesByFolder = {};
             for (const file of jsFiles) {
-              const folderPath = path.join('SuiteScripts', file.relativePath);
-              if (!filesByFolder[folderPath]) {
-                filesByFolder[folderPath] = [];
+              const githubFolderPath = path.join(sourceRoot, file.relativePath);
+              const netSuiteFolderPath = mapToNetSuiteFolderPath(githubFolderPath);
+              
+              if (!filesByFolder[netSuiteFolderPath]) {
+                filesByFolder[netSuiteFolderPath] = [];
               }
-              filesByFolder[folderPath].push(file);
+              filesByFolder[netSuiteFolderPath].push(file);
             }
 
             // Process files folder by folder
-            for (const folderPath in filesByFolder) {
-              const files = filesByFolder[folderPath];
-              const folderId = getFolderIdForPath(folderPath);
+            for (const netSuiteFolderPath in filesByFolder) {
+              const files = filesByFolder[netSuiteFolderPath];
+              const folderId = getFolderIdForPath(netSuiteFolderPath);
               
-              console.log(`\nProcessing ${files.length} files in ${folderPath} (NetSuite Folder ID: ${folderId})`);
+              console.log(`\nProcessing ${files.length} files for NetSuite folder: ${netSuiteFolderPath} (ID: ${folderId})`);
               
               for (const fileInfo of files) {
                 const result = await uploadSingleFile(fileInfo, folderId);
@@ -374,7 +400,7 @@ jobs:
             try {
               console.log('Starting NetSuite deployment...');
               console.log(`Source root directory: ${SOURCE_ROOT}`);
-              console.log('Folder ID mappings:');
+              console.log('NetSuite folder ID mappings:');
               for (const [path, id] of Object.entries(FOLDER_IDS)) {
                 console.log(`  ${path}: ${id}`);
               }
@@ -390,13 +416,6 @@ jobs:
           main();
           EOF
       
-      - name: Create SuiteScripts directory structure
-        run: |
-          mkdir -p "SuiteScripts/Restlet Scripts"
-          mkdir -p "SuiteScripts/Scheduled Scripts"
-          mkdir -p "SuiteScripts/MapReduce Scripts"
-          mkdir -p "SuiteScripts/Suitelet Scripts"
-      
       - name: Deploy to NetSuite
         run: node multiplier_netsuite_deployment.js
         env:
@@ -407,9 +426,6 @@ jobs:
           TOKEN_ID: ${{ secrets.NETSUITE_TOKEN_ID }}
           TOKEN_SECRET: ${{ secrets.NETSUITE_TOKEN_SECRET }}
           NETSUITE_SUITESCRIPTS_FOLDER_ID: ${{ secrets.NETSUITE_SUITESCRIPTS_FOLDER_ID }}
-          NETSUITE_RESTLET_FOLDER_ID: ${{ secrets.NETSUITE_RESTLET_FOLDER_ID }}
-          NETSUITE_SCHEDULED_FOLDER_ID: ${{ secrets.NETSUITE_SCHEDULED_FOLDER_ID }}
-          NETSUITE_MAPREDUCE_FOLDER_ID: ${{ secrets.NETSUITE_MAPREDUCE_FOLDER_ID }}
-          NETSUITE_SUITELET_FOLDER_ID: ${{ secrets.NETSUITE_SUITELET_FOLDER_ID }}
+          NETSUITE_RESTLET_FOLDER_ID: '2747420'
           JWT_PRIVATE_KEY: ${{ secrets.NETSUITE_JWT_PRIVATE_KEY }}
           JWT_KEY_ID: ${{ secrets.NETSUITE_JWT_KEY_ID }}
