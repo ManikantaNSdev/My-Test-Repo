@@ -34,7 +34,7 @@ jobs:
 
       - name: Install global dependencies
         run: |
-          npm install -g @oracle/suitecloud-cli
+          npm install -g @oracle/suitecloud-cli --acceptsuitecloudsdklicense
           npm install -g typescript
 
       - name: Install project dependencies
