@@ -39,11 +39,18 @@ jobs:
         with:
           node-version: '16'
 
-      - name: Install dependencies
+      - name: Install global dependencies
         run: |
           npm install -g @oracle/suitecloud-cli
           npm install -g typescript
-          npm ci
+
+      - name: Install project dependencies
+        run: |
+          if [ -f "package.json" ]; then
+            npm ci
+          else
+            echo "No package.json found, skipping npm ci"
+          fi
 
       - name: Make deployment script executable
         run: chmod +x ./multiplier_github_netsuite_deployment.sh
