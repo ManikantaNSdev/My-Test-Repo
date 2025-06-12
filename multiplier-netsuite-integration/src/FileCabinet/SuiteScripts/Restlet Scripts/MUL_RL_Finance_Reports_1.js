@@ -6,7 +6,7 @@
 define(['N/ui/serverWidget', 'N/search', 'N/runtime', 'N/format'], function(serverWidget, search, runtime, format) {
     function onRequest(context) {
         if (context.request.method === 'GET') {
-            log.debug('restelet triggered');
+            
             try{
                 var params = context.request.parameters;
                 var reportId = params.rid;
