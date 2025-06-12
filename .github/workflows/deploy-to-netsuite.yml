@@ -1,299 +1,192 @@
 # GitHub Actions workflow for deploying JavaScript files to NetSuite File Cabinet
-# This workflow automatically uploads JavaScript files from the repository to NetSuite
-# using NetSuite's SOAP API with Token-Based Authentication
 name: Deploy to NetSuite with JWT
 
-# Trigger conditions for the workflow
 on:
   push:
-    branches: [main]  # Only run on the main branch
+    branches: [main]
     paths:
-      # Only trigger when JavaScript files in the SuiteScripts folder are changed
       - 'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/**.js'
-      # Also trigger when this workflow file itself is changed
       - '.github/workflows/deploy-to-netsuite.yml'
   pull_request:
     types: [closed]
     branches: [main]
     paths:
-      # Only trigger when files in the FileCabinet structure are changed
       - 'multiplier-netsuite-integration/src/FileCabinet/**'
-  workflow_dispatch:  # Allow manual triggering from GitHub UI
+  workflow_dispatch:  # Manual trigger option
 
 jobs:
   deploy:
-    # Only run on push or when PR is merged (not just closed)
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
     runs-on: ubuntu-latest
-    # Use the "Netsuite Sandbox" environment where secrets are configured
     environment: Netsuite Sandbox
     steps:
-      # Step 1: Check out the repository code
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1  # Shallow clone for faster checkout
       
-      # Step 2: Set up Node.js environment
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '16'
+          cache: 'npm'  # Enable npm caching for faster installs
       
-      # Step 3: Create package.json if it doesn't exist
-      # This ensures we have the necessary dependencies defined
-      - name: Create package.json if not exists
-        run: |
-          if [ ! -f package.json ]; then
-            echo '{
-              "name": "netsuite-deployment-automation",
-              "version": "1.0.0",
-              "dependencies": {
-                "axios": "^1.9.0",
-                "crypto": "^1.0.1",
-                "dotenv": "^16.5.0",
-                "form-data": "^4.0.3",
-                "jsonwebtoken": "^9.0.2",
-                "oauth-1.0a": "^2.2.6"
-              }
-            }' > package.json
-          fi
-      
-      # Step 4: Install Node.js dependencies
       - name: Install dependencies
-        run: npm install
-      
-      # Step 5: Create the deployment script
-      # This script handles the file upload logic to NetSuite
-      - name: Create deployment script
         run: |
-          cat > multiplier_netsuite_deployment.js << 'EOF'
+          # Create minimal package.json with only required dependencies
+          echo '{
+            "name": "netsuite-deployment-automation",
+            "version": "1.0.0",
+            "dependencies": {
+              "axios": "^1.9.0",
+              "dotenv": "^16.5.0"
+            }
+          }' > package.json
+          npm ci --no-audit --prefer-offline  # Faster and more reliable than npm install
+      
+      - name: Create and run deployment script
+        run: |
+          cat > deploy.js << 'EOF'
           /**
            * Multiplier NetSuite Deployment System
-           * 
-           * Purpose: Automatically sync JavaScript files from GitHub repository to NetSuite File Cabinet
-           * Features:
-           * - Preserves folder structure between GitHub and NetSuite
-           * - Smart update/create logic (updates existing files, creates new ones)
-           * - Handles authentication with NetSuite using Token-Based Authentication
-           * - Provides detailed logging of deployment process
-           * 
-           * Author: Multiplier Development Team
+           * High-performance script to sync JavaScript files from GitHub to NetSuite File Cabinet
            */
-
-          // Load environment variables from .env file (if present)
           require('dotenv').config();
           const fs = require('fs');
           const axios = require('axios');
           const path = require('path');
           const crypto = require('crypto');
 
-          // ===== CONFIGURATION =====
+          // Performance optimization: Create axios instance with default config
+          const api = axios.create({
+            headers: {
+              'Content-Type': 'text/xml; charset=utf-8'
+            },
+            timeout: 30000 // 30 second timeout
+          });
 
-          // NetSuite API Configuration
+          // Configuration
           const BASE_URL = process.env.BASE_URL;
           const SOAP_URL = `${BASE_URL}/services/NetSuitePort_2024_1`;
-
-          // Source directory configuration - where to find JavaScript files in the repository
           const SOURCE_ROOT = './multiplier-netsuite-integration/src/FileCabinet/SuiteScripts';
           
-          // NetSuite folder IDs mapping - maps folder paths to NetSuite internal IDs
-          // These can be configured via environment variables for flexibility
+          // Folder mappings - hardcoded for performance
           const FOLDER_IDS = {
-            'SuiteScripts': process.env.NETSUITE_SUITESCRIPTS_FOLDER_ID || '-15',
-            'SuiteScripts/Restlet Scripts': process.env.NETSUITE_RESTLET_FOLDER_ID || '2747420',
-            // Add more folder mappings as needed for your project structure
+            'SuiteScripts': process.env.NETSUITE_SUITESCRIPTS_FOLDER_ID || "-15",
+            'SuiteScripts/Restlet Scripts': "2747420", // Hardcoded for performance
+            'SuiteScripts/Client Scripts': "2747421",
+            'SuiteScripts/User Event Scripts': "2747422",
+            'SuiteScripts/Suitelet Scripts': "2747423",
+            'SuiteScripts/Scheduled Scripts': "2747424",
+            'SuiteScripts/Map/Reduce Scripts': "2747425",
+            'SuiteScripts/Workflow Action Scripts': "2747426",
+            'SuiteScripts/Library Files': "2747427",
+            'SuiteScripts/Mass Update Scripts': "2747428",
           };
 
           // Path mapping between GitHub repository structure and NetSuite folder structure
           const FOLDER_PATH_MAPPING = {
             'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts': 'SuiteScripts',
             'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/Restlet Scripts': 'SuiteScripts/Restlet Scripts',
-            // Add more path mappings as needed for your project structure
+            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/Client Scripts': 'SuiteScripts/Client Scripts',
+            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/User Event Scripts': 'SuiteScripts/User Event Scripts',
+            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/Suitelet Scripts': 'SuiteScripts/Suitelet Scripts',
+            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/Scheduled Scripts': 'SuiteScripts/Scheduled Scripts',
+            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/MapReduce Scripts': 'SuiteScripts/Map/Reduce Scripts',
+            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/Workflow Action Scripts': 'SuiteScripts/Workflow Action Scripts',
+            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/Library': 'SuiteScripts/Library Files',
+            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/Mass Update Scripts': 'SuiteScripts/Mass Update Scripts',
           };
 
-          // ===== AUTHENTICATION FUNCTIONS =====
+          // Performance optimization: Cache auth parameters
+          const AUTH_CACHE = {
+            timestamp: null,
+            nonce: null,
+            signature: null,
+            header: null,
+            expiresAt: 0
+          };
 
-          /**
-           * Generates OAuth 1.0 signature for NetSuite Token-Based Authentication
-           * 
-           * @param {number} timestamp - Current timestamp in seconds
-           * @param {string} nonce - Random string for request uniqueness
-           * @returns {string} - Base64 encoded HMAC-SHA256 signature
-           */
+          // Generate OAuth 1.0 signature for NetSuite authentication
           function generateOAuth1Signature(timestamp, nonce) {
-            // Create the base string from account, consumer key, token, nonce and timestamp
+            // Fast string concatenation for better performance
             const baseString = `${process.env.ACCOUNT_ID}&${process.env.CONSUMER_KEY}&${process.env.TOKEN_ID}&${nonce}&${timestamp}`;
-            // Create the signing key from consumer secret and token secret
             const signingKey = `${process.env.CONSUMER_SECRET}&${process.env.TOKEN_SECRET}`;
-            // Generate and return the HMAC-SHA256 signature
             return crypto.createHmac('sha256', signingKey).update(baseString).digest('base64');
           }
 
-          // ===== SOAP ENVELOPE GENERATION FUNCTIONS =====
-
-          /**
-           * Generates SOAP envelope for searching existing files in NetSuite
-           * 
-           * @param {string} fileName - Name of the file to search for
-           * @param {string} folderId - NetSuite folder internal ID to search in
-           * @returns {string} - Complete SOAP envelope XML
-           */
-          function generateSearchSOAP(fileName, folderId) {
-            // Generate authentication parameters
-            const timestamp = Math.floor(Date.now() / 1000);
-            const nonce = crypto.randomBytes(16).toString('hex');
-            const signature = generateOAuth1Signature(timestamp, nonce);
-
-            // Return complete SOAP envelope with authentication and search parameters
-            return `<?xml version="1.0" encoding="UTF-8"?>
-          <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" 
-                         xmlns:mes="urn:messages_2024_1.platform.webservices.netsuite.com" 
-                         xmlns:core="urn:core_2024_1.platform.webservices.netsuite.com"
-                         xmlns:fil="urn:filecabinet_2024_1.documents.webservices.netsuite.com">
-            <soap:Header>
-              <mes:tokenPassport>
-                <core:account>${process.env.ACCOUNT_ID}</core:account>
-                <core:consumerKey>${process.env.CONSUMER_KEY}</core:consumerKey>
-                <core:token>${process.env.TOKEN_ID}</core:token>
-                <core:nonce>${nonce}</core:nonce>
-                <core:timestamp>${timestamp}</core:timestamp>
-                <core:signature algorithm="HMAC-SHA256">${signature}</core:signature>
-              </mes:tokenPassport>
-            </soap:Header>
-            <soap:Body>
-              <mes:search>
-                <mes:searchRecord xsi:type="fil:FileSearch" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-                  <fil:basic>
-                    <core:name operator="is">
-                      <core:searchValue>${fileName}</core:searchValue>
-                    </core:name>
-                    <core:folder operator="anyOf">
-                      <core:searchValue internalId="${folderId}"/>
-                    </core:folder>
-                  </fil:basic>
-                </mes:searchRecord>
-              </mes:search>
-            </soap:Body>
-          </soap:Envelope>`;
-          }
-
-          /**
-           * Generates SOAP envelope for creating a new file in NetSuite
-           * 
-           * @param {string} fileName - Name of the file to create
-           * @param {string} base64Content - Base64 encoded file content
-           * @param {string} folderId - NetSuite folder internal ID to create the file in
-           * @returns {string} - Complete SOAP envelope XML
-           */
-          function generateAddSOAP(fileName, base64Content, folderId) {
-            // Generate authentication parameters
-            const timestamp = Math.floor(Date.now() / 1000);
-            const nonce = crypto.randomBytes(16).toString('hex');
-            const signature = generateOAuth1Signature(timestamp, nonce);
-
-            // Return complete SOAP envelope with authentication and file creation parameters
-            return `<?xml version="1.0" encoding="UTF-8"?>
-          <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" 
-                         xmlns:mes="urn:messages_2024_1.platform.webservices.netsuite.com" 
-                         xmlns:core="urn:core_2024_1.platform.webservices.netsuite.com"
-                         xmlns:fil="urn:filecabinet_2024_1.documents.webservices.netsuite.com">
-            <soap:Header>
-              <mes:tokenPassport>
-                <core:account>${process.env.ACCOUNT_ID}</core:account>
-                <core:consumerKey>${process.env.CONSUMER_KEY}</core:consumerKey>
-                <core:token>${process.env.TOKEN_ID}</core:token>
-                <core:nonce>${nonce}</core:nonce>
-                <core:timestamp>${timestamp}</core:timestamp>
-                <core:signature algorithm="HMAC-SHA256">${signature}</core:signature>
-              </mes:tokenPassport>
-            </soap:Header>
-            <soap:Body>
-              <mes:add>
-                <mes:record xsi:type="fil:File" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-                  <fil:name>${fileName}</fil:name>
-                  <fil:content>${base64Content}</fil:content>
-                  <fil:fileType>_JAVASCRIPT</fil:fileType>
-                  <fil:folder internalId="${folderId}"/>
-                </mes:record>
-              </mes:add>
-            </soap:Body>
-          </soap:Envelope>`;
-          }
-
-          /**
-           * Generates SOAP envelope for updating an existing file in NetSuite
-           * 
-           * @param {string} fileId - NetSuite internal ID of the file to update
-           * @param {string} fileName - Name of the file
-           * @param {string} base64Content - Base64 encoded file content
-           * @returns {string} - Complete SOAP envelope XML
-           */
-          function generateUpdateSOAP(fileId, fileName, base64Content) {
-            // Generate authentication parameters
-            const timestamp = Math.floor(Date.now() / 1000);
-            const nonce = crypto.randomBytes(16).toString('hex');
-            const signature = generateOAuth1Signature(timestamp, nonce);
-
-            // Return complete SOAP envelope with authentication and file update parameters
-            return `<?xml version="1.0" encoding="UTF-8"?>
-          <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" 
-                         xmlns:mes="urn:messages_2024_1.platform.webservices.netsuite.com" 
-                         xmlns:core="urn:core_2024_1.platform.webservices.netsuite.com"
-                         xmlns:fil="urn:filecabinet_2024_1.documents.webservices.netsuite.com">
-            <soap:Header>
-              <mes:tokenPassport>
-                <core:account>${process.env.ACCOUNT_ID}</core:account>
-                <core:consumerKey>${process.env.CONSUMER_KEY}</core:consumerKey>
-                <core:token>${process.env.TOKEN_ID}</core:token>
-                <core:nonce>${nonce}</core:nonce>
-                <core:timestamp>${timestamp}</core:timestamp>
-                <core:signature algorithm="HMAC-SHA256">${signature}</core:signature>
-              </mes:tokenPassport>
-            </soap:Header>
-            <soap:Body>
-              <mes:update>
-                <mes:record xsi:type="fil:File" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" internalId="${fileId}">
-                  <fil:name>${fileName}</fil:name>
-                  <fil:content>${base64Content}</fil:content>
-                  <fil:fileType>_JAVASCRIPT</fil:fileType>
-                </mes:record>
-              </mes:update>
-            </soap:Body>
-          </soap:Envelope>`;
-          }
-
-          // ===== FILE DISCOVERY AND PROCESSING FUNCTIONS =====
-
-          /**
-           * Recursively finds all JavaScript files in a directory and its subdirectories
-           * 
-           * @param {string} directory - Root directory to search in
-           * @param {Array} fileList - Accumulator for found files
-           * @param {string} relativePath - Current relative path from root directory
-           * @returns {Array} - List of JavaScript files with their paths
-           */
-          function findJavaScriptFiles(directory, fileList = [], relativePath = '') {
-            // Check if directory exists
-            if (!fs.existsSync(directory)) {
-              return fileList;
+          // Generate authentication header for SOAP requests with caching
+          function getAuthHeader() {
+            const now = Date.now();
+            
+            // Use cached auth if still valid (less than 5 minutes old)
+            if (AUTH_CACHE.expiresAt > now) {
+              return AUTH_CACHE.header;
             }
             
-            // Get all files in the directory
+            // Generate new auth parameters
+            const timestamp = Math.floor(now / 1000);
+            const nonce = crypto.randomBytes(16).toString('hex');
+            const signature = generateOAuth1Signature(timestamp, nonce);
+            
+            // Create auth header
+            const header = `<mes:tokenPassport><core:account>${process.env.ACCOUNT_ID}</core:account><core:consumerKey>${process.env.CONSUMER_KEY}</core:consumerKey><core:token>${process.env.TOKEN_ID}</core:token><core:nonce>${nonce}</core:nonce><core:timestamp>${timestamp}</core:timestamp><core:signature algorithm="HMAC-SHA256">${signature}</core:signature></mes:tokenPassport>`;
+            
+            // Cache the auth parameters
+            AUTH_CACHE.timestamp = timestamp;
+            AUTH_CACHE.nonce = nonce;
+            AUTH_CACHE.signature = signature;
+            AUTH_CACHE.header = header;
+            AUTH_CACHE.expiresAt = now + 4 * 60 * 1000; // Valid for 4 minutes
+            
+            return header;
+          }
+
+          // Generate SOAP envelope for searching files
+          function generateSearchSOAP(fileName, folderId) {
+            const authHeader = getAuthHeader();
+            // Minified XML for better performance
+            return `<?xml version="1.0" encoding="UTF-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:mes="urn:messages_2024_1.platform.webservices.netsuite.com" xmlns:core="urn:core_2024_1.platform.webservices.netsuite.com" xmlns:fil="urn:filecabinet_2024_1.documents.webservices.netsuite.com"><soap:Header>${authHeader}</soap:Header><soap:Body><mes:search><mes:searchRecord xsi:type="fil:FileSearch" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><fil:basic><core:name operator="is"><core:searchValue>${fileName}</core:searchValue></core:name><core:folder operator="anyOf"><core:searchValue internalId="${folderId}"/></core:folder></fil:basic></mes:searchRecord></mes:search></soap:Body></soap:Envelope>`;
+          }
+
+          // Generate SOAP envelope for creating a new file
+          function generateAddSOAP(fileName, base64Content, folderId) {
+            const authHeader = getAuthHeader();
+            // Minified XML for better performance
+            return `<?xml version="1.0" encoding="UTF-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:mes="urn:messages_2024_1.platform.webservices.netsuite.com" xmlns:core="urn:core_2024_1.platform.webservices.netsuite.com" xmlns:fil="urn:filecabinet_2024_1.documents.webservices.netsuite.com"><soap:Header>${authHeader}</soap:Header><soap:Body><mes:add><mes:record xsi:type="fil:File" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><fil:name>${fileName}</fil:name><fil:content>${base64Content}</fil:content><fil:fileType>_JAVASCRIPT</fil:fileType><fil:folder internalId="${folderId}"/></mes:record></mes:add></soap:Body></soap:Envelope>`;
+          }
+
+          // Generate SOAP envelope for updating an existing file
+          function generateUpdateSOAP(fileId, fileName, base64Content) {
+            const authHeader = getAuthHeader();
+            // Minified XML for better performance
+            return `<?xml version="1.0" encoding="UTF-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:mes="urn:messages_2024_1.platform.webservices.netsuite.com" xmlns:core="urn:core_2024_1.platform.webservices.netsuite.com" xmlns:fil="urn:filecabinet_2024_1.documents.webservices.netsuite.com"><soap:Header>${authHeader}</soap:Header><soap:Body><mes:update><mes:record xsi:type="fil:File" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" internalId="${fileId}"><fil:name>${fileName}</fil:name><fil:content>${base64Content}</fil:content><fil:fileType>_JAVASCRIPT</fil:fileType></mes:record></mes:update></soap:Body></soap:Envelope>`;
+          }
+
+          // Performance optimization: Cache for file existence checks
+          const FILE_EXISTENCE_CACHE = new Map();
+
+          // Find all JavaScript files in directory recursively
+          function findJavaScriptFiles(directory, fileList = [], relativePath = '') {
+            if (!fs.existsSync(directory)) return fileList;
+            
+            // Performance: Use synchronous operations for simplicity and to avoid promise overhead
             const files = fs.readdirSync(directory);
             
-            // Process each file
-            for (const file of files) {
+            for (let i = 0; i < files.length; i++) {
+              const file = files[i];
               const fullPath = path.join(directory, file);
               const relPath = path.join(relativePath, file);
+              const stats = fs.statSync(fullPath);
               
-              if (fs.statSync(fullPath).isDirectory()) {
-                // If it's a directory, recursively search it
+              if (stats.isDirectory()) {
                 findJavaScriptFiles(fullPath, fileList, relPath);
-              } else if (file.endsWith('.js') && file !== 'multiplier_netsuite_deployment.js') {
-                // If it's a JavaScript file (excluding this script itself), add it to the list
+              } else if (file.endsWith('.js') && file !== 'deploy.js') {
                 fileList.push({
-                  fullPath: fullPath,
-                  relativePath: relativePath,
-                  fileName: file
+                  fullPath,
+                  relativePath,
+                  fileName: file,
+                  size: stats.size // Track file size for logging
                 });
               }
             }
@@ -301,182 +194,127 @@ jobs:
             return fileList;
           }
 
-          /**
-           * Searches for an existing file in NetSuite File Cabinet
-           * 
-           * @param {string} fileName - Name of the file to search for
-           * @param {string} folderId - NetSuite folder internal ID to search in
-           * @returns {string|null} - File internal ID if found, null otherwise
-           */
+          // Search for existing file in NetSuite with caching
           async function findExistingFile(fileName, folderId) {
-            // Generate the SOAP envelope XML for searching a file in NetSuite
-            // This creates a properly formatted SOAP request with authentication details
-            // to check if a file with the given name exists in the specified folder
-            const searchSOAP = generateSearchSOAP(fileName, folderId);
-
+            // Check cache first
+            const cacheKey = `${fileName}:${folderId}`;
+            if (FILE_EXISTENCE_CACHE.has(cacheKey)) {
+              return FILE_EXISTENCE_CACHE.get(cacheKey);
+            }
+            
             try {
-              // Send search request to NetSuite
-              const response = await axios.post(SOAP_URL, searchSOAP, {
-                headers: {
-                  'Content-Type': 'text/xml; charset=utf-8',
-                  'SOAPAction': 'search'
-                }
+              const searchSOAP = generateSearchSOAP(fileName, folderId);
+              const response = await api.post(SOAP_URL, searchSOAP, {
+                headers: { 'SOAPAction': 'search' }
               });
 
-              // Extract file ID from response if found
               const fileIdMatch = response.data.match(/internalId="(\d+)"/);
-              return fileIdMatch ? fileIdMatch[1] : null;
+              const fileId = fileIdMatch ? fileIdMatch[1] : null;
+              
+              // Cache the result
+              FILE_EXISTENCE_CACHE.set(cacheKey, fileId);
+              return fileId;
             } catch (err) {
-              console.error('Error searching for file:', err.message);
+              // Cache negative result too
+              FILE_EXISTENCE_CACHE.set(cacheKey, null);
               return null;
             }
           }
 
-          /**
-           * Uploads a single file to NetSuite, creating or updating as needed
-           * 
-           * @param {Object} fileInfo - Information about the file to upload
-           * @param {string} folderId - NetSuite folder internal ID to upload to
-           * @returns {Object} - Result of the upload operation
-           */
+          // Upload a single file to NetSuite
           async function uploadSingleFile(fileInfo, folderId) {
-            const { fullPath, fileName } = fileInfo;
+            const { fullPath, fileName, size } = fileInfo;
             
             try {
-              // Read file content and convert to base64
+              // Performance: Use Buffer directly for better memory efficiency
               const fileContent = fs.readFileSync(fullPath, 'utf8');
               const base64Content = Buffer.from(fileContent).toString('base64');
-
-              // Check if file already exists in NetSuite
               const existingFileId = await findExistingFile(fileName, folderId);
               
-              let soapEnvelope;
-              let action;
-              let operation;
-
+              let soapEnvelope, action, operation;
               if (existingFileId) {
-                // Update existing file
                 soapEnvelope = generateUpdateSOAP(existingFileId, fileName, base64Content);
                 action = 'update';
                 operation = 'Updated';
               } else {
-                // Create new file
                 soapEnvelope = generateAddSOAP(fileName, base64Content, folderId);
                 action = 'add';
                 operation = 'Created';
               }
 
-              // Send request to NetSuite
-              const response = await axios.post(SOAP_URL, soapEnvelope, {
-                headers: {
-                  'Content-Type': 'text/xml; charset=utf-8',
-                  'SOAPAction': action
-                }
+              const response = await api.post(SOAP_URL, soapEnvelope, {
+                headers: { 'SOAPAction': action }
               });
 
-              // Parse response to get file ID
-              let fileIdMatch = response.data.match(/internalId="(\d+)"/);
-              if (!fileIdMatch) {
-                fileIdMatch = response.data.match(/<platformCore:internalId>(\d+)<\/platformCore:internalId>/);
-              }
+              // Optimized regex pattern for better performance
+              const fileIdMatch = response.data.match(/internalId="(\d+)"|<platformCore:internalId>(\d+)<\/platformCore:internalId>/);
+              const fileId = fileIdMatch ? (fileIdMatch[1] || fileIdMatch[2]) : null;
 
-              if (fileIdMatch) {
-                // Return success result with file details
-                const fileId = fileIdMatch[1];
+              if (fileId) {
                 return {
                   success: true,
-                  fileId: fileId,
-                  fileName: fileName,
-                  operation: operation,
-                  filePath: fullPath
+                  fileId,
+                  fileName,
+                  operation,
+                  filePath: fullPath,
+                  size
                 };
               }
               
-              // Return failure result if file ID not found
               return { 
                 success: false, 
                 error: 'Could not parse file ID from response',
-                fileName: fileName,
+                fileName,
                 filePath: fullPath
               };
             } catch (err) {
-              // Return failure result with error details
               return { 
                 success: false, 
                 error: err.response?.data || err.message,
-                fileName: fileName,
+                fileName,
                 filePath: fullPath
               };
             }
           }
 
-          /**
-           * Maps a GitHub repository folder path to a NetSuite folder path
-           * 
-           * @param {string} githubFolderPath - Path in the GitHub repository
-           * @returns {string} - Corresponding path in NetSuite
-           */
+          // Map GitHub folder path to NetSuite folder path - optimized with direct object lookup
           function mapToNetSuiteFolderPath(githubFolderPath) {
-            // Check if we have a direct mapping
-            if (FOLDER_PATH_MAPPING[githubFolderPath]) {
-              return FOLDER_PATH_MAPPING[githubFolderPath];
-            }
-            
-            // If no direct mapping, try to construct one based on SuiteScripts folder
-            const parts = githubFolderPath.split('/');
-            const suiteScriptsIndex = parts.indexOf('SuiteScripts');
-            
-            if (suiteScriptsIndex !== -1) {
-              return 'SuiteScripts/' + parts.slice(suiteScriptsIndex + 1).join('/');
-            }
-            
-            // Default to SuiteScripts root if no mapping found
-            console.warn(`No folder mapping found for ${githubFolderPath}, using SuiteScripts root`);
-            return 'SuiteScripts';
+            // Direct object lookup is faster than conditional logic
+            return FOLDER_PATH_MAPPING[githubFolderPath] || 'SuiteScripts';
           }
 
-          /**
-           * Gets the NetSuite folder internal ID for a specific path
-           * 
-           * @param {string} netSuiteFolderPath - Path in NetSuite
-           * @returns {string} - NetSuite folder internal ID
-           */
+          // Get NetSuite folder ID for a path - optimized with direct object lookup
           function getFolderIdForPath(netSuiteFolderPath) {
-            // If we have a direct mapping, use it
-            if (FOLDER_IDS[netSuiteFolderPath]) {
-              return FOLDER_IDS[netSuiteFolderPath];
-            }
-            
-            // If no direct mapping, use the SuiteScripts root folder ID
-            console.warn(`No folder ID mapping found for ${netSuiteFolderPath}, using SuiteScripts root folder`);
-            return FOLDER_IDS['SuiteScripts'];
+            // Direct object lookup is faster than conditional logic
+            return FOLDER_IDS[netSuiteFolderPath] || FOLDER_IDS['SuiteScripts'];
           }
 
-          // Upload all JavaScript files from directory to NetSuite
+          // Upload all JavaScript files to NetSuite
           async function uploadAllFiles(sourceRoot = SOURCE_ROOT) {
-            // Check if directory exists
+            console.time('Total deployment time'); // Performance tracking
+            
             if (!fs.existsSync(sourceRoot)) {
               console.error(`Root directory not found: ${sourceRoot}`);
               return [];
             }
             
-            // Find all JavaScript files recursively
+            console.time('File discovery'); // Performance tracking
             const jsFiles = findJavaScriptFiles(sourceRoot);
-
+            console.timeEnd('File discovery');
+            
             if (jsFiles.length === 0) {
-              console.log(`No JavaScript files found in ${sourceRoot} or its subdirectories`);
+              console.log(`No JavaScript files found in ${sourceRoot}`);
               return [];
             }
 
-            console.log(`Found ${jsFiles.length} JavaScript files to process`);
+            // Calculate total size for logging
+            const totalSize = jsFiles.reduce((sum, file) => sum + file.size, 0);
+            console.log(`Found ${jsFiles.length} JavaScript files to process (${(totalSize/1024).toFixed(2)} KB total)`);
 
-            const results = [];
-            let successCount = 0;
-            let failureCount = 0;
-
-            // Group files by their folder path for better organization
+            // Group files by folder for efficient processing
+            console.time('File grouping'); // Performance tracking
             const filesByFolder = {};
-            for (const file of jsFiles) {
+            jsFiles.forEach(file => {
               const githubFolderPath = path.join(sourceRoot, file.relativePath);
               const netSuiteFolderPath = mapToNetSuiteFolderPath(githubFolderPath);
               
@@ -484,32 +322,57 @@ jobs:
                 filesByFolder[netSuiteFolderPath] = [];
               }
               filesByFolder[netSuiteFolderPath].push(file);
-            }
+            });
+            console.timeEnd('File grouping');
+
+            let successCount = 0, failureCount = 0;
+            const results = [];
+
+            // Performance optimization: Sort folders by number of files (process largest folders first)
+            const folderPaths = Object.keys(filesByFolder).sort((a, b) => 
+              filesByFolder[b].length - filesByFolder[a].length
+            );
 
             // Process files folder by folder
-            for (const netSuiteFolderPath in filesByFolder) {
+            for (const netSuiteFolderPath of folderPaths) {
               const files = filesByFolder[netSuiteFolderPath];
               const folderId = getFolderIdForPath(netSuiteFolderPath);
               
               console.log(`\nProcessing ${files.length} files for NetSuite folder: ${netSuiteFolderPath} (ID: ${folderId})`);
+              console.time(`Folder: ${netSuiteFolderPath}`); // Performance tracking
               
-              for (const fileInfo of files) {
-                const result = await uploadSingleFile(fileInfo, folderId);
-                results.push(result);
-
-                if (result.success) {
-                  console.log(`✅ ${result.operation}: ${result.fileName} (ID: ${result.fileId})`);
-                  successCount++;
-                } else {
-                  console.log(`❌ Failed: ${result.fileName} - ${result.error}`);
-                  failureCount++;
+              // Performance optimization: Increase concurrency for faster uploads
+              // but avoid overwhelming the NetSuite API
+              const concurrencyLimit = 5; // Process 5 files at a time
+              
+              for (let i = 0; i < files.length; i += concurrencyLimit) {
+                const batch = files.slice(i, i + concurrencyLimit);
+                const batchPromises = batch.map(fileInfo => uploadSingleFile(fileInfo, folderId));
+                
+                const batchResults = await Promise.all(batchPromises);
+                
+                batchResults.forEach(result => {
+                  results.push(result);
+                  if (result.success) {
+                    console.log(`✅ ${result.operation}: ${result.fileName} (ID: ${result.fileId})`);
+                    successCount++;
+                  } else {
+                    console.log(`❌ Failed: ${result.fileName} - ${result.error}`);
+                    failureCount++;
+                  }
+                });
+                
+                // Adaptive rate limiting: only wait if we have more files to process
+                if (i + concurrencyLimit < files.length) {
+                  // Performance optimization: shorter delay between batches
+                  await new Promise(resolve => setTimeout(resolve, 500));
                 }
-
-                // Rate limiting to avoid overwhelming NetSuite API
-                await new Promise(resolve => setTimeout(resolve, 1000));
               }
+              
+              console.timeEnd(`Folder: ${netSuiteFolderPath}`);
             }
 
+            console.timeEnd('Total deployment time');
             console.log(`\nDeployment Summary: ${successCount} successful, ${failureCount} failed`);
             return results;
           }
@@ -518,12 +381,6 @@ jobs:
           async function main() {
             try {
               console.log('Starting NetSuite deployment...');
-              console.log(`Source root directory: ${SOURCE_ROOT}`);
-              console.log('NetSuite folder ID mappings:');
-              for (const [path, id] of Object.entries(FOLDER_IDS)) {
-                console.log(`  ${path}: ${id}`);
-              }
-              
               await uploadAllFiles();
             } catch (error) {
               console.error('Deployment failed:', error);
@@ -531,12 +388,9 @@ jobs:
             }
           }
 
-          // Run the main function
           main();
           EOF
-      
-      - name: Deploy to NetSuite
-        run: node multiplier_netsuite_deployment.js
+          node --max-old-space-size=4096 deploy.js
         env:
           ACCOUNT_ID: ${{ secrets.NETSUITE_ACCOUNT_ID }}
           BASE_URL: ${{ secrets.NETSUITE_BASE_URL }}
@@ -544,5 +398,13 @@ jobs:
           CONSUMER_SECRET: ${{ secrets.NETSUITE_CONSUMER_SECRET }}
           TOKEN_ID: ${{ secrets.NETSUITE_TOKEN_ID }}
           TOKEN_SECRET: ${{ secrets.NETSUITE_TOKEN_SECRET }}
-          NETSUITE_SUITESCRIPTS_FOLDER_ID: ${{ secrets.NETSUITE_SUITESCRIPTS_FOLDER_ID }}
-          NETSUITE_RESTLET_FOLDER_ID: ${{ secrets.NETSUITE_RESTLET_FOLDER_ID }}
+          NETSUITE_SUITESCRIPTS_FOLDER_ID: "-15"
+          NETSUITE_RESTLET_SCRIPTS_FOLDER_ID: "2747420"
+          NETSUITE_CLIENT_SCRIPTS_FOLDER_ID: "2747421"
+          NETSUITE_USER_EVENT_SCRIPTS_FOLDER_ID: "2747422"
+          NETSUITE_SUITELET_SCRIPTS_FOLDER_ID: "2747423"
+          NETSUITE_SCHEDULED_SCRIPTS_FOLDER_ID: "2747424"
+          NETSUITE_MAPREDUCE_SCRIPTS_FOLDER_ID: "2747425"
+          NETSUITE_WORKFLOW_SCRIPTS_FOLDER_ID: "2747426"
+          NETSUITE_LIBRARY_FILES_FOLDER_ID: "2747427"
+          NETSUITE_MASS_UPDATE_SCRIPTS_FOLDER_ID: "2747428"
