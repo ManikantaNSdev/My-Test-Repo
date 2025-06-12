@@ -4,6 +4,25 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'sandbox'
+        type: choice
+        options:
+          - sandbox
+          - production
+      deploy_mode:
+        description: 'Deployment mode'
+        required: true
+        default: 'validate_and_deploy'
+        type: choice
+        options:
+          - validate_only
+          - deploy_only
+          - validate_and_deploy
 
 jobs:
   deploy:
@@ -11,20 +30,55 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
-      - name: Install Suite CLI
-        run: npm install -g @oracle/suitecloud-cli
-        run: npm install -g typescript
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm install -g @oracle/suitecloud-cli
+          npm install -g typescript
+          npm ci
+
+      - name: Make deployment script executable
+        run: chmod +x ./multiplier_github_netsuite_deployment.sh
 
       - name: Deploy to Sandbox
+        if: ${{ github.event.inputs.environment == 'sandbox' || github.event.inputs.environment == null }}
         env:
           NS_ACCOUNT: ${{ secrets.SANDBOX_ACCOUNT }}
-          NS_EMAIL: ${{ secrets.SANDBOX_EMAIL }}
-          NS_PASSWORD: ${{ secrets.SANDBOX_PASSWORD }}
-          NS_ROLEID: ${{ secrets.SANDBOX_ROLEID }}
-          NS_APPID: ${{ secrets.SANDBOX_APPID }}
+          NS_CONSUMER_KEY: ${{ secrets.SANDBOX_CONSUMER_KEY }}
+          NS_CERTIFICATE_ID: ${{ secrets.SANDBOX_CERTIFICATE_ID }}
+          NS_PRIVATE_KEY: ${{ secrets.SANDBOX_PRIVATE_KEY }}
         run: |
-          tsc
-          suitecloud project:validate
-          suitecloud project:deploy
+          ./multiplier_github_netsuite_deployment.sh \
+            --environment sandbox \
+            --mode ${{ github.event.inputs.deploy_mode || 'validate_and_deploy' }}
+
+      - name: Deploy to Production
+        if: ${{ github.event.inputs.environment == 'production' }}
+        env:
+          NS_ACCOUNT: ${{ secrets.PRODUCTION_ACCOUNT }}
+          NS_CONSUMER_KEY: ${{ secrets.PRODUCTION_CONSUMER_KEY }}
+          NS_CERTIFICATE_ID: ${{ secrets.PRODUCTION_CERTIFICATE_ID }}
+          NS_PRIVATE_KEY: ${{ secrets.PRODUCTION_PRIVATE_KEY }}
+        run: |
+          ./multiplier_github_netsuite_deployment.sh \
+            --environment production \
+            --mode ${{ github.event.inputs.deploy_mode || 'validate_and_deploy' }}
+
+      - name: Notify deployment status
+        if: always()
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          SLACK_CHANNEL: netsuite-deployments
+          SLACK_COLOR: ${{ job.status }}
+          SLACK_TITLE: NetSuite Deployment Status
+          SLACK_MESSAGE: 'Deployment to ${{ github.event.inputs.environment || "sandbox" }} ${{ job.status }}'
