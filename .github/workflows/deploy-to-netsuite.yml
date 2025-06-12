@@ -19,6 +19,23 @@ jobs:
         with:
           node-version: '16'
       
+      - name: Create package.json if not exists
+        run: |
+          if [ ! -f package.json ]; then
+            echo '{
+              "name": "netsuite-deployment-automation",
+              "version": "1.0.0",
+              "dependencies": {
+                "axios": "^1.9.0",
+                "crypto": "^1.0.1",
+                "dotenv": "^16.5.0",
+                "form-data": "^4.0.3",
+                "jsonwebtoken": "^9.0.2",
+                "oauth-1.0a": "^2.2.6"
+              }
+            }' > package.json
+          fi
+      
       - name: Install dependencies
         run: npm install
       
