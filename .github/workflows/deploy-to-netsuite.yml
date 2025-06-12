@@ -73,6 +73,15 @@ jobs:
             --environment production \
             --mode ${{ github.event.inputs.deploy_mode || 'validate_and_deploy' }}
 
+      - name: Set environment name
+        id: env_name
+        run: |
+          if [ -z "${{ github.event.inputs.environment }}" ]; then
+            echo "env_name=sandbox" >> $GITHUB_OUTPUT
+          else
+            echo "env_name=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Notify deployment status
         if: always()
         uses: rtCamp/action-slack-notify@v2
@@ -81,4 +90,4 @@ jobs:
           SLACK_CHANNEL: netsuite-deployments
           SLACK_COLOR: ${{ job.status }}
           SLACK_TITLE: NetSuite Deployment Status
-          SLACK_MESSAGE: 'Deployment to ${{ github.event.inputs.environment || "sandbox" }} ${{ job.status }}'
+          SLACK_MESSAGE: "Deployment to ${{ steps.env_name.outputs.env_name }} ${{ job.status }}"
