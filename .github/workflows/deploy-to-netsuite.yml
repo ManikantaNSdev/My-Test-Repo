@@ -12,11 +12,21 @@ on:
       - 'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/**.js'
       # Also trigger when this workflow file itself is changed
       - '.github/workflows/deploy-to-netsuite.yml'
+  pull_request:
+    types: [closed]
+    branches: [main]
+    paths:
+      # Only trigger when files in the FileCabinet structure are changed
+      - 'multiplier-netsuite-integration/src/FileCabinet/**'
   workflow_dispatch:  # Allow manual triggering from GitHub UI
 
 jobs:
   deploy:
+    # Only run on push or when PR is merged (not just closed)
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
     runs-on: ubuntu-latest
+    # Use the "Netsuite Sandbox" environment where secrets are configured
+    environment: Netsuite Sandbox
     steps:
       # Step 1: Check out the repository code
       - name: Checkout code
@@ -88,7 +98,7 @@ jobs:
           // NetSuite folder IDs mapping - maps folder paths to NetSuite internal IDs
           // These can be configured via environment variables for flexibility
           const FOLDER_IDS = {
-            'SuiteScripts': process.env.NETSUITE_SUITESCRIPTS_FOLDER_ID || '2746719',
+            'SuiteScripts': process.env.NETSUITE_SUITESCRIPTS_FOLDER_ID || '-15',
             'SuiteScripts/Restlet Scripts': process.env.NETSUITE_RESTLET_FOLDER_ID || '2747420',
             // Add more folder mappings as needed for your project structure
           };
@@ -299,7 +309,9 @@ jobs:
            * @returns {string|null} - File internal ID if found, null otherwise
            */
           async function findExistingFile(fileName, folderId) {
-            // Generate SOAP envelope for file search
+            // Generate the SOAP envelope XML for searching a file in NetSuite
+            // This creates a properly formatted SOAP request with authentication details
+            // to check if a file with the given name exists in the specified folder
             const searchSOAP = generateSearchSOAP(fileName, folderId);
 
             try {
@@ -533,4 +545,4 @@ jobs:
           TOKEN_ID: ${{ secrets.NETSUITE_TOKEN_ID }}
           TOKEN_SECRET: ${{ secrets.NETSUITE_TOKEN_SECRET }}
           NETSUITE_SUITESCRIPTS_FOLDER_ID: ${{ secrets.NETSUITE_SUITESCRIPTS_FOLDER_ID }}
-          NETSUITE_RESTLET_FOLDER_ID: '2747420'
+          NETSUITE_RESTLET_FOLDER_ID: ${{ secrets.NETSUITE_RESTLET_FOLDER_ID }}
