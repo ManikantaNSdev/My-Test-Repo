@@ -1,3 +1,4 @@
+
 # GitHub Actions workflow for deploying JavaScript files to NetSuite File Cabinet
 name: Deploy to NetSuite with JWT
 
@@ -28,7 +29,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '16'
+          node-version: '18'  # Updated to Node.js 18 LTS
       
       - name: Install dependencies
         run: |
@@ -59,6 +60,15 @@ jobs:
           const path = require('path');
           const crypto = require('crypto');
 
+          // Parse configuration from environment variable
+          const config = JSON.parse(process.env.CONFIG);
+          
+          // Determine which environment to use based on the branch
+          const branch = process.env.GITHUB_REF_NAME;
+          const isMain = branch === 'main';
+          // If branch is 'main', use PRODUCTION config, otherwise use SANDBOX
+          const currentConfig = isMain ? config.PRODUCTION : config.SANDBOX;
+
           // Performance optimization: Create axios instance with default config
           const api = axios.create({
             headers: {
@@ -68,36 +78,38 @@ jobs:
           });
 
           // Configuration
-          const BASE_URL = process.env.BASE_URL;
+          const ACCOUNT_ID = currentConfig.ACCOUNT_ID;
+          const BASE_URL = `https://${ACCOUNT_ID}.suitetalk.api.netsuite.com`;
           const SOAP_URL = `${BASE_URL}/services/NetSuitePort_2024_1`;
           const SOURCE_ROOT = './multiplier-netsuite-integration/src/FileCabinet/SuiteScripts';
           
-          // Folder mappings - hardcoded for performance
+          // Folder mappings - using values from currentConfig with fallback defaults
           const FOLDER_IDS = {
-            'SuiteScripts': process.env.NETSUITE_SUITESCRIPTS_FOLDER_ID || "-15",
-            'SuiteScripts/Restlet Scripts': "2747420", // Hardcoded for performance
-            'SuiteScripts/Client Scripts': "2747421",
-            'SuiteScripts/User Event Scripts': "2747422",
-            'SuiteScripts/Suitelet Scripts': "2747423",
-            'SuiteScripts/Scheduled Scripts': "2747424",
-            'SuiteScripts/Map/Reduce Scripts': "2747425",
-            'SuiteScripts/Workflow Action Scripts': "2747426",
-            'SuiteScripts/Library Files': "2747427",
-            'SuiteScripts/Mass Update Scripts': "2747428",
+            'SuiteScripts': currentConfig.NETSUITE_SUITESCRIPTS_FOLDER_ID || "-15",
+            'SuiteScripts/RestletScripts': currentConfig.NETSUITE_RESTLET_SCRIPTS_FOLDER_ID || "2747420",
+            'SuiteScripts/ClientScripts': currentConfig.NETSUITE_CLIENT_SCRIPTS_FOLDER_ID || "2747421",
+            'SuiteScripts/UserEventScripts': currentConfig.NETSUITE_USER_EVENT_SCRIPTS_FOLDER_ID || "2747422",
+            'SuiteScripts/SuiteletScripts': currentConfig.NETSUITE_SUITELET_SCRIPTS_FOLDER_ID || "2747423",
+            'SuiteScripts/ScheduledScripts': currentConfig.NETSUITE_SCHEDULED_SCRIPTS_FOLDER_ID || "2747424",
+            'SuiteScripts/MapReduceScripts': currentConfig.NETSUITE_MAPREDUCE_SCRIPTS_FOLDER_ID || "2747425",
+            'SuiteScripts/WorkflowActionScripts': currentConfig.NETSUITE_WORKFLOW_SCRIPTS_FOLDER_ID || "2747426",
+            'SuiteScripts/LibraryFiles': currentConfig.NETSUITE_LIBRARY_FILES_FOLDER_ID || "2747427",
+            'SuiteScripts/MassUpdateScripts': currentConfig.NETSUITE_MASS_UPDATE_SCRIPTS_FOLDER_ID || "2747428",
           };
 
           // Path mapping between GitHub repository structure and NetSuite folder structure
+          // Both keys and values must match the folder structure exactly (no spaces)
           const FOLDER_PATH_MAPPING = {
             'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts': 'SuiteScripts',
-            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/Restlet Scripts': 'SuiteScripts/Restlet Scripts',
-            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/Client Scripts': 'SuiteScripts/Client Scripts',
-            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/User Event Scripts': 'SuiteScripts/User Event Scripts',
-            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/Suitelet Scripts': 'SuiteScripts/Suitelet Scripts',
-            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/Scheduled Scripts': 'SuiteScripts/Scheduled Scripts',
-            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/MapReduce Scripts': 'SuiteScripts/Map/Reduce Scripts',
-            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/Workflow Action Scripts': 'SuiteScripts/Workflow Action Scripts',
-            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/Library': 'SuiteScripts/Library Files',
-            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/Mass Update Scripts': 'SuiteScripts/Mass Update Scripts',
+            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/RestletScripts': 'SuiteScripts/RestletScripts',
+            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/ClientScripts': 'SuiteScripts/ClientScripts',
+            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/UserEventScripts': 'SuiteScripts/UserEventScripts',
+            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/SuiteletScripts': 'SuiteScripts/SuiteletScripts',
+            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/ScheduledScripts': 'SuiteScripts/ScheduledScripts',
+            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/MapReduceScripts': 'SuiteScripts/MapReduceScripts',
+            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/WorkflowActionScripts': 'SuiteScripts/WorkflowActionScripts',
+            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/Library': 'SuiteScripts/LibraryFiles',
+            'multiplier-netsuite-integration/src/FileCabinet/SuiteScripts/MassUpdateScripts': 'SuiteScripts/MassUpdateScripts',
           };
 
           // Performance optimization: Cache auth parameters
@@ -109,11 +121,11 @@ jobs:
             expiresAt: 0
           };
 
-          // Generate OAuth 1.0 signature for NetSuite authentication
+          // Generate OAuth 1.0 signature for NetSuite authentication using currentConfig values
           function generateOAuth1Signature(timestamp, nonce) {
             // Fast string concatenation for better performance
-            const baseString = `${process.env.ACCOUNT_ID}&${process.env.CONSUMER_KEY}&${process.env.TOKEN_ID}&${nonce}&${timestamp}`;
-            const signingKey = `${process.env.CONSUMER_SECRET}&${process.env.TOKEN_SECRET}`;
+            const baseString = `${currentConfig.ACCOUNT_ID}&${currentConfig.CONSUMER_KEY}&${currentConfig.TOKEN_ID}&${nonce}&${timestamp}`;
+            const signingKey = `${currentConfig.CONSUMER_SECRET}&${currentConfig.TOKEN_SECRET}`;
             return crypto.createHmac('sha256', signingKey).update(baseString).digest('base64');
           }
 
@@ -132,7 +144,7 @@ jobs:
             const signature = generateOAuth1Signature(timestamp, nonce);
             
             // Create auth header
-            const header = `<mes:tokenPassport><core:account>${process.env.ACCOUNT_ID}</core:account><core:consumerKey>${process.env.CONSUMER_KEY}</core:consumerKey><core:token>${process.env.TOKEN_ID}</core:token><core:nonce>${nonce}</core:nonce><core:timestamp>${timestamp}</core:timestamp><core:signature algorithm="HMAC-SHA256">${signature}</core:signature></mes:tokenPassport>`;
+            const header = `<mes:tokenPassport><core:account>${currentConfig.ACCOUNT_ID}</core:account><core:consumerKey>${currentConfig.CONSUMER_KEY}</core:consumerKey><core:token>${currentConfig.TOKEN_ID}</core:token><core:nonce>${nonce}</core:nonce><core:timestamp>${timestamp}</core:timestamp><core:signature algorithm="HMAC-SHA256">${signature}</core:signature></mes:tokenPassport>`;
             
             // Cache the auth parameters
             AUTH_CACHE.timestamp = timestamp;
@@ -394,19 +406,4 @@ jobs:
           EOF
           node --max-old-space-size=4096 deploy.js
         env:
-          ACCOUNT_ID: ${{ secrets.NETSUITE_ACCOUNT_ID }}
-          BASE_URL: ${{ secrets.NETSUITE_BASE_URL }}
-          CONSUMER_KEY: ${{ secrets.NETSUITE_CONSUMER_KEY }}
-          CONSUMER_SECRET: ${{ secrets.NETSUITE_CONSUMER_SECRET }}
-          TOKEN_ID: ${{ secrets.NETSUITE_TOKEN_ID }}
-          TOKEN_SECRET: ${{ secrets.NETSUITE_TOKEN_SECRET }}
-          NETSUITE_SUITESCRIPTS_FOLDER_ID: "-15"
-          NETSUITE_RESTLET_SCRIPTS_FOLDER_ID: "2747420"
-          NETSUITE_CLIENT_SCRIPTS_FOLDER_ID: "2747421"
-          NETSUITE_USER_EVENT_SCRIPTS_FOLDER_ID: "2747422"
-          NETSUITE_SUITELET_SCRIPTS_FOLDER_ID: "2747423"
-          NETSUITE_SCHEDULED_SCRIPTS_FOLDER_ID: "2747424"
-          NETSUITE_MAPREDUCE_SCRIPTS_FOLDER_ID: "2747425"
-          NETSUITE_WORKFLOW_SCRIPTS_FOLDER_ID: "2747426"
-          NETSUITE_LIBRARY_FILES_FOLDER_ID: "2747427"
-          NETSUITE_MASS_UPDATE_SCRIPTS_FOLDER_ID: "2747428"
+          CONFIG: '{"PRODUCTION":{"ACCOUNT_ID":"7260051","CONSUMER_KEY":"cc73e2f5667cc60b20b3f603ec64f650a5a4776594394162aac9da1a22f2ba6f","CONSUMER_SECRET":"5c896bfc209f30d1d075cbde248a30e786a8fae6f191bbe59db01d2cb6fb02a8","TOKEN_ID":"c9f5faaf9e8f935879d026f2dac9ad0d5501e887a7d6f9a82ce2a2b48e4950e8","TOKEN_SECRET":"147f40faad27e7eced2c17dceef0b2e43bfdae4cca8ac2ac4a4039e9e7c83eee","JWT_KEY_ID":"-BjJw_gR-bj3DPRG11yARc365uzSS-7aTcRaN2jlS9I","NETSUITE_SUITESCRIPTS_FOLDER_ID":"-15","NETSUITE_RESTLET_SCRIPTS_FOLDER_ID":"2747420","NETSUITE_CLIENT_SCRIPTS_FOLDER_ID":"2747421","NETSUITE_USER_EVENT_SCRIPTS_FOLDER_ID":"2747422","NETSUITE_SUITELET_SCRIPTS_FOLDER_ID":"2747423","NETSUITE_SCHEDULED_SCRIPTS_FOLDER_ID":"2747424","NETSUITE_MAPREDUCE_SCRIPTS_FOLDER_ID":"2747425","NETSUITE_WORKFLOW_SCRIPTS_FOLDER_ID":"2747426","NETSUITE_LIBRARY_FILES_FOLDER_ID":"2747427","NETSUITE_MASS_UPDATE_SCRIPTS_FOLDER_ID":"2747428"},"SANDBOX":{"ACCOUNT_ID":"7260051_SB1","CONSUMER_KEY":"cc73e2f5667cc60b20b3f603ec64f650a5a4776594394162aac9da1a22f2ba6f","CONSUMER_SECRET":"5c896bfc209f30d1d075cbde248a30e786a8fae6f191bbe59db01d2cb6fb02a8","TOKEN_ID":"c9f5faaf9e8f935879d026f2dac9ad0d5501e887a7d6f9a82ce2a2b48e4950e8","TOKEN_SECRET":"147f40faad27e7eced2c17dceef0b2e43bfdae4cca8ac2ac4a4039e9e7c83eee","JWT_KEY_ID":"-BjJw_gR-bj3DPRG11yARc365uzSS-7aTcRaN2jlS9I","NETSUITE_SUITESCRIPTS_FOLDER_ID":"-15","NETSUITE_RESTLET_SCRIPTS_FOLDER_ID":"2747420","NETSUITE_CLIENT_SCRIPTS_FOLDER_ID":"2747421","NETSUITE_USER_EVENT_SCRIPTS_FOLDER_ID":"2747422","NETSUITE_SUITELET_SCRIPTS_FOLDER_ID":"2747423","NETSUITE_SCHEDULED_SCRIPTS_FOLDER_ID":"2747424","NETSUITE_MAPREDUCE_SCRIPTS_FOLDER_ID":"2747425","NETSUITE_WORKFLOW_SCRIPTS_FOLDER_ID":"2747426","NETSUITE_LIBRARY_FILES_FOLDER_ID":"2747427","NETSUITE_MASS_UPDATE_SCRIPTS_FOLDER_ID":"2747428"}}'
